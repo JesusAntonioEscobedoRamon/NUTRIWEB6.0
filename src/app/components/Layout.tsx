@@ -2,7 +2,7 @@ import { ReactNode, useState } from 'react';
 import { useAuth } from '@/app/context/useAuth';
 import { Button } from '@/app/components/ui/button';
 import { 
-  Home, // Cambiado por LayoutDashboard
+  Home,
   Users, 
   Calendar, 
   FileText, 
@@ -14,6 +14,7 @@ import {
   Menu,
   X
 } from 'lucide-react';
+import {ImageWithFallback} from '@/app/components/figma/ImageWithFallback';
 
 interface LayoutProps {
   children: ReactNode;
@@ -25,14 +26,18 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
   const { user, logout } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  // Depuración
+  console.log('Layout - User completo:', user);
+  console.log('Layout - fotoPerfil del nutriólogo:', user?.fotoPerfil);
+
   const adminMenuItems = [
-    { id: 'dashboard', label: 'Home', icon: Home }, // Nombre e icono actualizados
+    { id: 'dashboard', label: 'Home', icon: Home },
     { id: 'nutriologos', label: 'Nutriólogos', icon: Users },
     { id: 'estadisticas', label: 'Estadísticas', icon: FileText }
   ];
 
   const nutriologoMenuItems = [
-    { id: 'dashboard', label: 'Home', icon: Home }, // Nombre e icono actualizados
+    { id: 'dashboard', label: 'Home', icon: Home },
     { id: 'pacientes', label: 'Pacientes', icon: Users },
     { id: 'citas', label: 'Citas', icon: Calendar },
     { id: 'dietas', label: 'Dietas', icon: FileText },
@@ -47,6 +52,14 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
     onTabChange(id);
     setIsMobileMenuOpen(false);
   };
+
+  // Usar fotoPerfil (camelCase) que ya viene completa desde el contexto
+  const isNutriologo = user?.rol === 'nutriologo';
+  const profileImage = isNutriologo && user?.fotoPerfil 
+    ? user.fotoPerfil 
+    : null;
+
+  console.log('Layout - URL final para foto de perfil:', profileImage);
 
   return (
     <div className="flex h-screen bg-[#F8FFF9] font-sans p-0 md:p-6 gap-6 relative overflow-hidden">
@@ -107,15 +120,28 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
           })}
         </nav>
 
-        {/* Perfil & Logout */}
+        {/* Perfil & Logout - con foto de perfil para nutriólogo */}
         <div className="p-6 mt-auto">
           <div className="bg-[#F8FFF9] border-2 border-[#F0FFF4] rounded-[2rem] p-5 space-y-4">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-white border border-[#D1E8D5] flex items-center justify-center font-black text-[#2E8B57] text-xs">
-                {user?.nombre?.[0]}{user?.apellido?.[0]}
-              </div>
+              {profileImage ? (
+                <div className="h-10 w-10 rounded-xl overflow-hidden border-2 border-[#D1E8D5] flex-shrink-0">
+                  <ImageWithFallback
+                    src={profileImage}
+                    alt={`${user?.nombre} ${user?.apellido}`}
+                    className="w-full h-full object-cover"
+                    fallbackSrc="usu.webp"
+                  />
+                </div>
+              ) : (
+                <div className="h-10 w-10 rounded-xl bg-white border border-[#D1E8D5] flex items-center justify-center font-black text-[#2E8B57] text-xs">
+                  {user?.nombre?.[0]}{user?.apellido?.[0] || '?'}
+                </div>
+              )}
               <div className="overflow-hidden">
-                <p className="font-black text-[#1A3026] text-[11px] uppercase truncate">{user?.nombre} {user?.apellido}</p>
+                <p className="font-black text-[#1A3026] text-[11px] uppercase truncate">
+                  {user?.nombre} {user?.apellido}
+                </p>
                 <p className="text-[9px] font-bold text-gray-400 truncate">{user?.email}</p>
               </div>
             </div>

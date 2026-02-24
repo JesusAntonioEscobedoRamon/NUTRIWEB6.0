@@ -3,12 +3,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/ca
 import { Button } from '@/app/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/app/components/ui/table';
 import { Badge } from '@/app/components/ui/badge';
+import { Input } from '@/app/components/ui/input'; // ← IMPORTACIÓN QUE FALTABA
 import { useAuth } from '@/app/context/useAuth';
 import { supabase } from '@/app/context/supabaseClient';
-import { DollarSign, Download, TrendingUp, CreditCard, CheckCircle, Clock, Wallet } from 'lucide-react';
+import { DollarSign, Download, TrendingUp, CreditCard, CheckCircle, Clock, Wallet, Search } from 'lucide-react';
 import { toast } from 'sonner';
+import jsPDF from 'jspdf';
 
-// Componente de carga animado
+// Componente de carga animado (sin cambios)
 function AnimatedLoadingScreen() {
   const iconRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
@@ -107,6 +109,8 @@ function AnimatedLoadingScreen() {
 export function GestionPagos() {
   const { user } = useAuth();
   const [citas, setCitas] = useState<any[]>([]);
+  const [filteredCitas, setFilteredCitas] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [ingresosTotales, setIngresosTotales] = useState(0);
   const [pendientesCobro, setPendientesCobro] = useState(0);
@@ -124,17 +128,14 @@ export function GestionPagos() {
       try {
         const nutriologoId = Number(user.nutriologoId);
 
-        // Llamada a la función almacenada
         const { data: citasData, error: errCitas } = await supabase
           .rpc('get_pagados_nutriologo', { p_nutriologo_id: nutriologoId });
 
         if (errCitas) throw errCitas;
 
-        console.log('[GestionPagos] Datos recibidos:', citasData);
-
         const citasFormateadas = citasData?.map(c => ({
           id: c.id_cita,
-          fecha_hora: new Date(c.fecha_hora), // ← clave: guardamos fecha_hora completa
+          fecha_hora: new Date(c.fecha_hora),
           fecha: new Date(c.fecha_hora).toLocaleDateString('es-MX'),
           hora: new Date(c.fecha_hora).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
           estado: c.estado,
@@ -148,6 +149,7 @@ export function GestionPagos() {
         })) || [];
 
         setCitas(citasFormateadas);
+        setFilteredCitas(citasFormateadas);
 
         const ingresos = citasFormateadas.reduce((acc, c) => acc + (c.pagada ? c.monto : 0), 0);
         const pendientes = citasFormateadas.reduce((acc, c) => acc + (!c.pagada ? c.monto : 0), 0);
@@ -171,8 +173,67 @@ export function GestionPagos() {
     fetchPagos();
   }, [user?.nutriologoId]);
 
-  const descargarRecibo = (id: string) => {
-    toast.success(`Generando recibo de pago #${id}...`);
+  // Filtrado por búsqueda
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setFilteredCitas(citas);
+      return;
+    }
+
+    const q = searchQuery.toLowerCase().trim();
+    const filtered = citas.filter(cita => {
+      const nombreCompleto = `${cita.paciente.nombre} ${cita.paciente.apellido}`.toLowerCase();
+      return nombreCompleto.includes(q) || cita.paciente.email?.toLowerCase().includes(q);
+    });
+
+    setFilteredCitas(filtered);
+  }, [searchQuery, citas]);
+
+  // Función para generar y descargar recibo en PDF
+  const descargarRecibo = (cita: any) => {
+    const doc = new jsPDF();
+
+    const verde = [46, 139, 87]; // #2E8B57
+    const grisOscuro = [50, 50, 50];
+
+    // Header
+    doc.setFillColor(...verde);
+    doc.rect(0, 0, 210, 40, 'F');
+    doc.setFontSize(22);
+    doc.setTextColor(255);
+    doc.setFont('helvetica', 'bold');
+    doc.text('RECIBO DE PAGO', 105, 25, { align: 'center' });
+
+    // NutriU
+    doc.setFontSize(14);
+    doc.text('NutriU', 105, 35, { align: 'center' });
+
+    // Información
+    doc.setFontSize(12);
+    doc.setTextColor(...grisOscuro);
+    let y = 55;
+    doc.text(`Nutriólogo: ${user?.nombre || 'Jose C'}`, 20, y); y += 8;
+    doc.text(`Paciente: ${cita.paciente.nombre} ${cita.paciente.apellido}`, 20, y); y += 8;
+    doc.text(`Email: ${cita.paciente.email}`, 20, y); y += 8;
+    doc.text(`Fecha y Hora: ${cita.fecha} ${cita.hora}`, 20, y); y += 12;
+
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Monto: $${cita.monto.toLocaleString('es-MX')}`, 20, y); y += 10;
+
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Estado: ${cita.pagada ? 'PAGADO' : 'PENDIENTE'}`, 20, y); y += 15;
+
+    // Footer
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text('© +52 (653) 536 7647 • +52 (662) 146 4154', 105, y + 20, { align: 'center' });
+    doc.text('nutriologo.josec@email.com', 105, y + 27, { align: 'center' });
+    doc.text('Av. Kino y Calle 7 #1/2 Col. Médica, San Luis Río Colorado, Sonora', 105, y + 34, { align: 'center' });
+
+    doc.save(`Recibo_${cita.id}_${cita.fecha.replace(/\//g, '-')}.pdf`);
+    toast.success('Recibo generado y descargado');
   };
 
   if (loading) {
@@ -237,11 +298,22 @@ export function GestionPagos() {
           </Card>
         </div>
 
+        {/* Buscador Estilizado (igual que en GestionDietas) */}
+        <div className="relative max-w-2xl">
+          <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-[#2E8B57]" />
+          <Input
+            placeholder="BUSCAR PACIENTE POR NOMBRE O EMAIL..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-14 py-5 bg-white border-2 border-[#D1E8D5] rounded-2xl focus:border-[#2E8B57] outline-none text-[10px] font-black tracking-widest uppercase placeholder:text-gray-400 shadow-sm transition-all"
+          />
+        </div>
+
         {/* Tabla de Transacciones */}
         <div className="bg-white rounded-[2.5rem] border-2 border-[#D1E8D5] shadow-sm overflow-hidden">
           <div className="p-8 border-b border-[#F0FFF4] flex items-center justify-between bg-[#F8FFF9]/50">
             <h3 className="text-sm font-[900] text-[#1A3026] uppercase tracking-[2px]">
-              Historial de Transacciones
+              Historial de Transacciones ({filteredCitas.length})
             </h3>
             <CreditCard className="text-[#3CB371]" size={20} />
           </div>
@@ -258,7 +330,7 @@ export function GestionPagos() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {citas.map((cita) => (
+                {filteredCitas.map((cita) => (
                   <TableRow key={cita.id} className="border-b border-[#F0FFF4] hover:bg-[#F8FFF9] transition-colors group">
                     <TableCell className="py-6 pl-8">
                       <p className="font-black text-[#1A3026] uppercase text-xs tracking-tight">
@@ -280,7 +352,7 @@ export function GestionPagos() {
                       <Button 
                         variant="ghost" 
                         size="sm"
-                        onClick={() => descargarRecibo(cita.id)}
+                        onClick={() => descargarRecibo(cita)}
                         className="text-[#2E8B57] hover:bg-[#F0FFF4] hover:text-[#1A3026] rounded-xl group-hover:scale-110 transition-transform"
                       >
                         <Download size={18} />
@@ -288,10 +360,10 @@ export function GestionPagos() {
                     </TableCell>
                   </TableRow>
                 ))}
-                {citas.length === 0 && (
+                {filteredCitas.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={5} className="text-center py-10 text-gray-500">
-                      No hay transacciones registradas
+                      No hay transacciones registradas {searchQuery && 'o que coincidan con la búsqueda'}
                     </TableCell>
                   </TableRow>
                 )}

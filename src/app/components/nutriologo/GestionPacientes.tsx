@@ -3,21 +3,24 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/ca
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/app/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/app/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/app/components/ui/dialog';
 import { Badge } from '@/app/components/ui/badge';
+import { Label } from '@/app/components/ui/label';
+import { Textarea } from '@/app/components/ui/textarea';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/app/components/ui/accordion';
 import { useAuth } from '@/app/context/useAuth';
 import { supabase } from '@/app/context/supabaseClient';
-import { Search, Award, TrendingUp, User, Activity, Users } from 'lucide-react';
+import { Search, Award, TrendingUp, User, Activity, Users, Save } from 'lucide-react';
 import { toast } from 'sonner';
+import {ImageWithFallback} from '@/app/components/figma/ImageWithFallback';
 
-// Componente de carga animado
+// Componente de carga animado (sin cambios)
 function AnimatedLoadingScreen() {
   const iconRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
   const dotsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Animación del icono (pacientes)
     const iconElement = iconRef.current;
     const textElement = textRef.current;
     const dotsElement = dotsRef.current;
@@ -114,6 +117,12 @@ export function GestionPacientes() {
   const [loading, setLoading] = useState(true);
   const [selectedPaciente, setSelectedPaciente] = useState<any>(null);
 
+  // Estados para edición en el diálogo
+  const [editPeso, setEditPeso] = useState('');
+  const [editAltura, setEditAltura] = useState('');
+  const [editObjetivo, setEditObjetivo] = useState('');
+  const [editLoading, setEditLoading] = useState(false);
+
   useEffect(() => {
     if (!user?.nutriologoId) {
       setLoading(false);
@@ -121,13 +130,9 @@ export function GestionPacientes() {
       return;
     }
 
-    console.log('[GestionPacientes] Nutriólogo ID (integer):', user.nutriologoId);
-    console.log('[GestionPacientes] Auth UUID:', user.id);
-
     const fetchPacientes = async () => {
       setLoading(true);
       try {
-        // 1. Obtener IDs de pacientes asignados (usa nutriologoId integer)
         const { data: relaciones, error: errRel } = await supabase
           .from('paciente_nutriologo')
           .select('id_paciente')
@@ -144,7 +149,6 @@ export function GestionPacientes() {
 
         const pacienteIds = relaciones.map(r => r.id_paciente);
 
-        // 2. Obtener datos completos de pacientes + puntos
         const { data: pacientesData, error: errPac } = await supabase
           .from('pacientes')
           .select(`
@@ -156,35 +160,56 @@ export function GestionPacientes() {
             peso,
             altura,
             objetivo,
+            foto_perfil,
             puntos_paciente!inner (puntos_totales)
           `)
           .in('id_paciente', pacienteIds);
 
         if (errPac) throw errPac;
 
-        // 3. Calcular edad y formatear
-        const pacientesConEdad = pacientesData?.map(p => {
-          const nacimiento = new Date(p.fecha_nacimiento);
-          const hoy = new Date();
-          const edad = hoy.getFullYear() - nacimiento.getFullYear();
-          return {
-            id: p.id_paciente,
-            nombre: p.nombre,
-            apellido: p.apellido,
-            email: p.correo,
-            edad,
-            peso: p.peso || 0,
-            altura: p.altura || 0,
-            objetivo: p.objetivo || 'Sin objetivo definido',
-            puntos: p.puntos_paciente?.puntos_totales || 0,
-            // Simulamos calorías semanales (puedes conectar a registro_alimentos después)
-            caloriasConsumidas: [1800, 1900, 1750, 2000, 1850, 2100, 1950],
-            metaCalorias: 2000,
-            fechaRegistro: new Date().toLocaleDateString('es-MX')
-          };
-        }) || [];
+        // Generar URLs públicas CORRECTAS (sin agregar carpeta extra)
+        const pacientesConFotos = await Promise.all(
+          (pacientesData || []).map(async (p) => {
+            let fotoUrl = 'usu.webp'; // fallback
 
-        setPacientes(pacientesConEdad);
+            if (p.foto_perfil && p.foto_perfil.trim() !== '') {
+              // El path ya incluye perfiles_mobile/ (según tu móvil lo guarda así)
+              const pathCompleto = p.foto_perfil; // ej: perfiles_mobile/1771301876297.jpeg
+              const { data } = supabase.storage
+                .from('perfiles')
+                .getPublicUrl(pathCompleto);
+
+              if (data?.publicUrl) {
+                fotoUrl = data.publicUrl;
+                console.log('URL pública generada:', fotoUrl); // Para depurar
+              } else {
+                console.warn(`Fallo al generar URL para ${pathCompleto}`);
+              }
+            }
+
+            const nacimiento = new Date(p.fecha_nacimiento || Date.now());
+            const hoy = new Date();
+            const edad = hoy.getFullYear() - nacimiento.getFullYear();
+
+            return {
+              id: p.id_paciente,
+              nombre: p.nombre,
+              apellido: p.apellido,
+              email: p.correo,
+              edad,
+              peso: p.peso || 0,
+              altura: p.altura || 0,
+              objetivo: p.objetivo || 'Sin objetivo definido',
+              foto_perfil: fotoUrl,
+              puntos: p.puntos_paciente?.puntos_totales || 0,
+              caloriasConsumidas: [1800, 1900, 1750, 2000, 1850, 2100, 1950],
+              metaCalorias: 2000,
+              fechaRegistro: new Date().toLocaleDateString('es-MX')
+            };
+          })
+        );
+
+        setPacientes(pacientesConFotos);
       } catch (err: any) {
         console.error('Error cargando pacientes:', err);
         toast.error('No se pudieron cargar los pacientes');
@@ -213,6 +238,61 @@ export function GestionPacientes() {
     if (imc < 25) return { label: 'Normal', color: 'bg-[#F0FFF4] text-[#2E8B57] border-[#D1E8D5]' };
     if (imc < 30) return { label: 'Sobrepeso', color: 'bg-yellow-100 text-yellow-700' };
     return { label: 'Obesidad', color: 'bg-red-100 text-red-700' };
+  };
+
+  // Abrir diálogo y cargar valores actuales
+  const handleVerDetalles = (paciente: any) => {
+    setSelectedPaciente(paciente);
+    setEditPeso(paciente.peso.toString());
+    setEditAltura(paciente.altura.toString());
+    setEditObjetivo(paciente.objetivo);
+  };
+
+  // Guardar cambios con validación de límites
+  const handleGuardarCambios = async () => {
+    if (!selectedPaciente) return;
+
+    const pesoNum = parseFloat(editPeso);
+    const alturaNum = parseFloat(editAltura);
+
+    if (isNaN(pesoNum) || pesoNum < 0 || pesoNum > 700) {
+      toast.error('Peso debe estar entre 0 y 700 kg');
+      return;
+    }
+    if (isNaN(alturaNum) || alturaNum < 0 || alturaNum > 300) {
+      toast.error('Altura debe estar entre 0 y 300 cm');
+      return;
+    }
+
+    setEditLoading(true);
+
+    try {
+      const { error } = await supabase
+        .from('pacientes')
+        .update({
+          peso: pesoNum,
+          altura: alturaNum,
+          objetivo: editObjetivo.trim() || null
+        })
+        .eq('id_paciente', selectedPaciente.id);
+
+      if (error) throw error;
+
+      setPacientes(prev =>
+        prev.map(p =>
+          p.id === selectedPaciente.id
+            ? { ...p, peso: pesoNum, altura: alturaNum, objetivo: editObjetivo.trim() || 'Sin objetivo definido' }
+            : p
+        )
+      );
+
+      toast.success('Datos actualizados correctamente');
+    } catch (err: any) {
+      console.error('Error al actualizar paciente:', err);
+      toast.error('No se pudo actualizar: ' + (err.message || 'Intenta de nuevo'));
+    } finally {
+      setEditLoading(false);
+    }
   };
 
   if (loading) {
@@ -279,8 +359,13 @@ export function GestionPacientes() {
                     <TableRow key={paciente.id} className="border-b border-[#F0FFF4] hover:bg-[#F8FFF9] transition-colors group">
                       <TableCell className="py-5">
                         <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 bg-[#F0FFF4] rounded-xl flex items-center justify-center border border-[#D1E8D5]">
-                            <User size={18} className="text-[#2E8B57]" />
+                          <div className="h-10 w-10 bg-[#F0FFF4] rounded-full overflow-hidden border-2 border-[#D1E8D5] flex-shrink-0">
+                            <ImageWithFallback
+                              src={paciente.foto_perfil}
+                              alt={`${paciente.nombre} ${paciente.apellido}`}
+                              className="w-full h-full object-cover"
+                              fallbackSrc="usu.webp"
+                            />
                           </div>
                           <div>
                             <p className="font-black text-[#1A3026] uppercase text-xs tracking-tight">
@@ -314,69 +399,160 @@ export function GestionPacientes() {
                             <Button 
                               variant="outline" 
                               size="sm"
-                              onClick={() => setSelectedPaciente(paciente)}
+                              onClick={() => handleVerDetalles(paciente)}
                               className="border-2 border-[#D1E8D5] text-[#2E8B57] font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-[#F0FFF4] hover:border-[#2E8B57] transition-all px-4"
                             >
                               Ver Detalles
                             </Button>
                           </DialogTrigger>
-                          <DialogContent className="max-w-2xl rounded-[2.5rem] border-2 border-[#D1E8D5] bg-white p-8 overflow-hidden font-sans">
-                            <DialogHeader>
-                              <DialogTitle className="text-2xl font-[900] text-[#2E8B57] uppercase tracking-[2px] mb-4 text-left">
-                                Perfil de {paciente.nombre} {paciente.apellido}
-                              </DialogTitle>
-                            </DialogHeader>
-                            {selectedPaciente && (
-                              <div className="space-y-8 mt-4">
-                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                  {[
-                                    { label: 'EMAIL', val: paciente.email },
-                                    { label: 'EDAD', val: `${paciente.edad} años` },
-                                    { label: 'PESO ACTUAL', val: `${paciente.peso} kg` },
-                                    { label: 'ALTURA', val: `${paciente.altura} cm` },
-                                    { label: 'IMC', val: calcularIMC(paciente.peso, paciente.altura) },
-                                    { label: 'OBJETIVO', val: paciente.objetivo },
-                                    { label: 'PUNTOS', val: paciente.puntos, isAward: true },
-                                    { label: 'REGISTRO', val: paciente.fechaRegistro },
-                                  ].map((item, i) => (
-                                    <div key={i} className="bg-[#F8FFF9] p-3 rounded-xl border border-[#D1E8D5] min-h-[80px] flex flex-col">
-                                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">{item.label}</p>
-                                      <p className="text-xs font-black text-[#1A3026] flex items-center gap-2 break-words">
-                                        {item.isAward && <Award size={14} className="text-yellow-500 flex-shrink-0" />}
-                                        <span className="break-all">{item.val}</span>
-                                      </p>
+                          <DialogContent className="max-w-3xl rounded-[2.5rem] border-2 border-[#D1E8D5] bg-white p-0 overflow-hidden font-sans">
+                            <div className="custom-dialog-scroll overflow-y-auto max-h-[90vh] p-8">
+                              <DialogHeader>
+                                <DialogTitle className="text-2xl font-[900] text-[#2E8B57] uppercase tracking-[2px] mb-4 text-left flex items-center gap-4">
+                                  <div className="h-16 w-16 bg-[#F0FFF4] rounded-full overflow-hidden border-2 border-[#D1E8D5] flex-shrink-0">
+                                    <ImageWithFallback
+                                      src={paciente.foto_perfil}
+                                      alt={`${paciente.nombre} ${paciente.apellido}`}
+                                      className="w-full h-full object-cover"
+                                      fallbackSrc="usu.webp"
+                                    />
+                                  </div>
+                                  Perfil de {paciente.nombre} {paciente.apellido}
+                                </DialogTitle>
+                              </DialogHeader>
+                              {selectedPaciente && (
+                                <div className="space-y-8 mt-4">
+                                  {/* Contenedores fijos */}
+                                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                    <div className="bg-[#F8FFF9] p-3 rounded-xl border border-[#D1E8D5] min-h-[80px] flex flex-col">
+                                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">EMAIL</p>
+                                      <p className="text-xs font-black text-[#1A3026] break-all">{paciente.email}</p>
                                     </div>
-                                  ))}
-                                </div>
 
-                                <div className="pt-6 border-t-2 border-dashed border-[#F0FFF4]">
-                                  <h4 className="text-xs font-black text-[#2E8B57] uppercase tracking-[3px] mb-6 flex items-center gap-2">
-                                    <TrendingUp size={16} /> Progreso Semanal de Calorías
-                                  </h4>
-                                  <div className="grid grid-cols-7 gap-2">
-                                    {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((dia, idx) => {
-                                      const calorias = paciente.caloriasConsumidas[idx];
-                                      const porcentaje = (calorias / paciente.metaCalorias) * 100;
-                                      return (
-                                        <div key={dia} className="text-center">
-                                          <div className="text-[9px] font-black text-gray-400 mb-2">{dia}</div>
-                                          <div className="h-24 w-full bg-[#F0FFF4] rounded-xl flex items-end justify-center border border-[#D1E8D5] overflow-hidden">
-                                            <div 
-                                              className={`w-full transition-all duration-500 ${
-                                                porcentaje >= 90 && porcentaje <= 110 ? 'bg-[#2E8B57]' : 
-                                                porcentaje < 90 ? 'bg-blue-400' : 'bg-red-400'
-                                              }`}
-                                              style={{ height: `${Math.min(porcentaje, 100)}%` }}
-                                            />
+                                    <div className="bg-[#F8FFF9] p-3 rounded-xl border border-[#D1E8D5] min-h-[80px] flex flex-col">
+                                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">EDAD</p>
+                                      <p className="text-xs font-black text-[#1A3026]">{paciente.edad} años</p>
+                                    </div>
+
+                                    <div className="bg-[#F8FFF9] p-3 rounded-xl border border-[#D1E8D5] min-h-[80px] flex flex-col">
+                                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">IMC</p>
+                                      <Badge className={`${categoria.color} border-2 px-3 py-1 rounded-xl font-black text-[9px] uppercase tracking-tighter shadow-none`}>
+                                        {calcularIMC(parseFloat(editPeso), parseFloat(editAltura))} - {categoriaIMC(Number(calcularIMC(parseFloat(editPeso), parseFloat(editAltura)))).label}
+                                      </Badge>
+                                    </div>
+
+                                    <div className="bg-[#F8FFF9] p-3 rounded-xl border border-[#D1E8D5] min-h-[80px] flex flex-col">
+                                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">PUNTOS</p>
+                                      <div className="flex items-center gap-2">
+                                        <Award size={14} className="text-yellow-500 flex-shrink-0" />
+                                        <p className="text-xs font-black text-[#1A3026]">{paciente.puntos}</p>
+                                      </div>
+                                    </div>
+
+                                    <div className="bg-[#F8FFF9] p-3 rounded-xl border border-[#D1E8D5] min-h-[80px] flex flex-col">
+                                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">REGISTRO</p>
+                                      <p className="text-xs font-black text-[#1A3026]">{paciente.fechaRegistro}</p>
+                                    </div>
+                                  </div>
+
+                                  {/* Campos editables como lista con Accordion */}
+                                  <Accordion type="single" collapsible className="w-full">
+                                    <AccordionItem value="altura">
+                                      <AccordionTrigger>ALTURA (CM)</AccordionTrigger>
+                                      <AccordionContent>
+                                        <Input
+                                          type="number"
+                                          min="0"
+                                          max="300"
+                                          step="0.1"
+                                          value={editAltura}
+                                          onChange={(e) => setEditAltura(e.target.value)}
+                                          className="text-xs border-[#D1E8D5] focus:border-[#2E8B57]"
+                                        />
+                                      </AccordionContent>
+                                    </AccordionItem>
+
+                                    <AccordionItem value="peso">
+                                      <AccordionTrigger>PESO ACTUAL (KG)</AccordionTrigger>
+                                      <AccordionContent>
+                                        <Input
+                                          type="number"
+                                          min="0"
+                                          max="700"
+                                          step="0.1"
+                                          value={editPeso}
+                                          onChange={(e) => setEditPeso(e.target.value)}
+                                          className="text-xs border-[#D1E8D5] focus:border-[#2E8B57]"
+                                        />
+                                      </AccordionContent>
+                                    </AccordionItem>
+
+                                    <AccordionItem value="objetivo">
+                                      <AccordionTrigger>OBJETIVO</AccordionTrigger>
+                                      <AccordionContent>
+                                        <Textarea
+                                          value={editObjetivo}
+                                          onChange={(e) => setEditObjetivo(e.target.value)}
+                                          className="text-xs border-[#D1E8D5] focus:border-[#2E8B57] min-h-[80px]"
+                                          placeholder="Ej: Perder 10 kg, ganar masa muscular..."
+                                        />
+                                      </AccordionContent>
+                                    </AccordionItem>
+                                  </Accordion>
+
+                                  <DialogFooter className="pt-6 border-t-2 border-dashed border-[#F0FFF4]">
+                                    <Button
+                                      variant="outline"
+                                      onClick={() => {
+                                        setSelectedPaciente(null);
+                                        setEditPeso('');
+                                        setEditAltura('');
+                                        setEditObjetivo('');
+                                      }}
+                                      className="border-2 border-[#D1E8D5] text-gray-500"
+                                      disabled={editLoading}
+                                    >
+                                      Cancelar
+                                    </Button>
+                                    <Button
+                                      onClick={handleGuardarCambios}
+                                      disabled={editLoading}
+                                      className="bg-[#2E8B57] hover:bg-[#1A3026] text-white flex items-center gap-2"
+                                    >
+                                      <Save size={16} />
+                                      {editLoading ? 'Guardando...' : 'Guardar Cambios'}
+                                    </Button>
+                                  </DialogFooter>
+
+                                  <div className="pt-6 border-t-2 border-dashed border-[#F0FFF4]">
+                                    <h4 className="text-xs font-black text-[#2E8B57] uppercase tracking-[3px] mb-6 flex items-center gap-2">
+                                      <TrendingUp size={16} /> Progreso Semanal de Calorías
+                                    </h4>
+                                    <div className="grid grid-cols-7 gap-2">
+                                      {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((dia, idx) => {
+                                        const calorias = selectedPaciente.caloriasConsumidas[idx];
+                                        const porcentaje = (calorias / selectedPaciente.metaCalorias) * 100;
+                                        return (
+                                          <div key={dia} className="text-center">
+                                            <div className="text-[9px] font-black text-gray-400 mb-2">{dia}</div>
+                                            <div className="h-24 w-full bg-[#F0FFF4] rounded-xl flex items-end justify-center border border-[#D1E8D5] overflow-hidden">
+                                              <div 
+                                                className={`w-full transition-all duration-500 ${
+                                                  porcentaje >= 90 && porcentaje <= 110 ? 'bg-[#2E8B57]' : 
+                                                  porcentaje < 90 ? 'bg-blue-400' : 'bg-red-400'
+                                                }`}
+                                                style={{ height: `${Math.min(porcentaje, 100)}%` }}
+                                              />
+                                            </div>
+                                            <div className="text-[9px] font-black text-[#1A3026] mt-2">{calorias}</div>
                                           </div>
-                                          <div className="text-[9px] font-black text-[#1A3026] mt-2">{calorias}</div>
-                                        </div>
-                                      );
-                                    })}
+                                        );
+                                      })}
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                            )}
+                              )}
+                            </div>
                           </DialogContent>
                         </Dialog>
                       </TableCell>
@@ -395,6 +571,23 @@ export function GestionPacientes() {
           </div>
         </div>
       </div>
+
+      {/* Estilo global del scroll */}
+      <style jsx global>{`
+        .custom-dialog-scroll::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-dialog-scroll::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .custom-dialog-scroll::-webkit-scrollbar-thumb {
+          background: #D1E8D5;
+          border-radius: 10px;
+        }
+        .custom-dialog-scroll::-webkit-scrollbar-thumb:hover {
+          background: #3CB371;
+        }
+      `}</style>
     </div>
   );
 }

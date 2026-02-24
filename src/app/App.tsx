@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react'; // ← ESTO YA LO TENÍAS, pero asegúrate de que esté
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { AuthProvider} from '@/app/context/AuthContext';
+import { AuthProvider } from '@/app/context/AuthContext';
 import { Login } from '@/app/components/Login';
 import { ResetPassword } from '@/app/components/ResetPassword';
 import { Layout } from '@/app/components/Layout';
@@ -131,12 +131,11 @@ function AnimatedLoadingScreen() {
   );
 }
 
-// Componente protegido (modificado para permitir reset-password siempre)
+// Componente protegido
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const location = useLocation();
 
-  // Permitir SIEMPRE acceso a reset-password (para el flujo de recuperación)
   if (location.pathname === '/reset-password') {
     return children;
   }

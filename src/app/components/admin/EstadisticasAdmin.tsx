@@ -4,18 +4,21 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, LineChart, Line 
 } from 'recharts';
-import { Users, Calendar, TrendingUp, DollarSign, Award, ArrowUpRight, BarChart3 } from 'lucide-react';
+import { Users, Calendar, TrendingUp, DollarSign, Award, ArrowUpRight, BarChart3, Download } from 'lucide-react';
+import { Button } from '@/app/components/ui/button';
 import { supabase } from '@/app/context/supabaseClient';
 import { toast } from 'sonner';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import {ImageWithFallback} from '@/app/components/figma/ImageWithFallback';
 
-// Componente de carga animado
+// Componente de carga animado (tu versión original, sin cambios)
 function AnimatedLoadingScreen() {
   const iconRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
   const dotsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Animación del icono (estadísticas)
     const iconElement = iconRef.current;
     const textElement = textRef.current;
     const dotsElement = dotsRef.current;
@@ -122,97 +125,145 @@ export function EstadisticasAdmin() {
 
   useEffect(() => {
     fetchStatistics();
-  }, []);
+  }, []); // Solo una vez al montar, como tu original
 
   const fetchStatistics = async () => {
     setLoading(true);
     setErrorMsg('');
     try {
-      console.log('[ESTADISTICAS] Iniciando carga con RPCs...');
+      console.log('[ESTADISTICAS] Iniciando carga...');
 
       // 1. Total pacientes activos
-      const { count: totalPacientes, error: errP } = await supabase
+      const { count: totalPacientes } = await supabase
         .from('pacientes')
         .select('*', { count: 'exact', head: true })
         .eq('activo', true);
 
-      if (errP) throw errP;
-
       // 2. Total nutriólogos activos
-      const { count: totalNutriologos, error: errN } = await supabase
+      const { count: totalNutriologos } = await supabase
         .from('nutriologos')
         .select('*', { count: 'exact', head: true })
         .eq('activo', true);
 
-      if (errN) throw errN;
-
-      // 3. Citas e ingresos del mes actual (consulta simple, sin RPC)
+      // 3. Citas e ingresos del mes actual (sin duplicados)
       const now = new Date();
       const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 19);
       const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString().slice(0, 19);
 
-      const { data: citasMesData, error: errC } = await supabase
+      const { data: citasMesData } = await supabase
         .from('citas')
-        .select('fecha_hora')
+        .select('id_cita')
         .gte('fecha_hora', currentMonthStart)
         .lte('fecha_hora', currentMonthEnd);
 
-      if (errC) throw errC;
       const citasMes = citasMesData?.length || 0;
 
-      const { data: pagosMesData, error: errPag } = await supabase
+      const { data: pagosMesData } = await supabase
         .from('pagos')
         .select('monto')
         .eq('estado', 'completado')
         .gte('fecha_pago', currentMonthStart)
         .lte('fecha_pago', currentMonthEnd);
 
-      if (errPag) throw errPag;
       const ingresosMes = pagosMesData?.reduce((sum, p) => sum + Number(p.monto || 0), 0) || 0;
 
-      // 4. Gráficas mensuales con RPC (una sola llamada para últimos 6 meses)
-      console.log('[ESTADISTICAS] Llamando RPC get_monthly_stats...');
-      const { data: monthlyStats, error: errMonthly } = await supabase
+      console.log('[INGRESOS] Pagos del mes:', pagosMesData);
+      console.log('[INGRESOS] Total calculado:', ingresosMes);
+
+      // 4. Gráficas mensuales (últimos 6 meses)
+      const { data: monthlyStats } = await supabase
         .rpc('get_monthly_stats', { last_months: 6 });
 
-      if (errMonthly) {
-        console.error('[ESTADISTICAS] Error RPC monthly stats:', errMonthly);
-        throw errMonthly;
-      }
-
-      const meses = monthlyStats.map(stat => ({
+      const meses = monthlyStats?.map(stat => ({
         mes: stat.mes,
         visitas: Number(stat.visitas),
         ingresos: Number(stat.ingresos),
-      }));
+      })) || [];
 
-      // 5. Rendimiento por nutriólogo con RPC (una sola llamada)
-      console.log('[ESTADISTICAS] Llamando RPC get_nutriologos_rendimiento...');
-      const { data: rendimientoData, error: errRend } = await supabase
+      // 5. Rendimiento por nutriólogo con fotos
+      const { data: rendimientoData } = await supabase
         .rpc('get_nutriologos_rendimiento');
 
-      if (errRend) {
-        console.error('[ESTADISTICAS] Error RPC rendimiento:', errRend);
-        throw errRend;
-      }
+      const rendimientoConFotos = (rendimientoData || []).map(n => {
+        let fotoUrl = 'usu.webp';
+        if (n.foto_perfil && n.foto_perfil.trim() !== '') {
+          fotoUrl = n.foto_perfil; // Ya es URL completa en tu BD
+        }
+        return { ...n, foto_perfil: fotoUrl };
+      });
 
-      // Actualizar estados
       setStats({ totalPacientes, totalNutriologos, citasMes, ingresosMes });
       setVisitasPorMes(meses.map(m => ({ mes: m.mes, visitas: m.visitas })));
       setIngresosPorMes(meses.map(m => ({ mes: m.mes, ingresos: m.ingresos })));
-      setRendimientoNutriologos(rendimientoData || []);
+      setRendimientoNutriologos(rendimientoConFotos);
 
-      console.log('[ESTADISTICAS] Carga completada exitosamente con RPCs');
     } catch (err: any) {
-      console.error('[ESTADISTICAS] Error general:', err);
-      setErrorMsg(err.message || 'Error desconocido al cargar estadísticas');
+      console.error('[ESTADISTICAS] Error:', err);
+      setErrorMsg(err.message || 'Error desconocido');
       toast.error('No se pudieron cargar las estadísticas');
     } finally {
       setLoading(false);
     }
   };
 
-  const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
+  const exportarReporte = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    doc.setFillColor(46, 139, 87);
+    doc.rect(0, 0, pageWidth, 40, 'F');
+    doc.setFontSize(22);
+    doc.setTextColor(255);
+    doc.setFont('helvetica', 'bold');
+    doc.text('REPORTE ADMINISTRATIVO', pageWidth / 2, 25, { align: 'center' });
+
+    doc.setFontSize(14);
+    doc.text('NutriU - Panel de Control', pageWidth / 2, 35, { align: 'center' });
+
+    doc.setFontSize(12);
+    doc.setTextColor(0);
+    doc.text(`Generado: ${new Date().toLocaleDateString('es-MX')}`, 20, 55);
+
+    doc.setFontSize(16);
+    doc.text('Resumen General', 20, 70);
+    autoTable(doc, {
+      startY: 75,
+      head: [['Métrica', 'Valor']],
+      body: [
+        ['Pacientes Totales', stats.totalPacientes],
+        ['Nutriólogos Activos', stats.totalNutriologos],
+        ['Citas del Mes', stats.citasMes],
+        ['Ingresos Mensuales', `$${stats.ingresosMes.toLocaleString('es-MX')}`],
+      ],
+      theme: 'grid',
+      styles: { fontSize: 10, cellPadding: 4 },
+      headStyles: { fillColor: [46, 139, 87], textColor: [255] },
+    });
+
+    const finalY = doc.lastAutoTable.finalY + 20;
+    doc.setFontSize(16);
+    doc.text('Rendimiento por Especialista', 20, finalY);
+
+    const rendimientoTable = rendimientoNutriologos.map(n => [
+      `${n.nombre} ${n.apellido}`,
+      n.pacientes,
+      n.citas,
+      `$${n.ingresos.toLocaleString('es-MX')}`
+    ]);
+
+    autoTable(doc, {
+      startY: finalY + 5,
+      head: [['Nutriólogo', 'Pacientes', 'Citas', 'Ingresos']],
+      body: rendimientoTable,
+      theme: 'grid',
+      styles: { fontSize: 9, cellPadding: 4 },
+      headStyles: { fillColor: [46, 139, 87], textColor: [255] },
+      alternateRowStyles: { fillColor: [245, 255, 245] }
+    });
+
+    doc.save(`Reporte_NutriU_${new Date().toISOString().slice(0,10)}.pdf`);
+    toast.success('Reporte exportado como PDF');
+  };
 
   if (loading) {
     return <AnimatedLoadingScreen />;
@@ -324,7 +375,14 @@ export function EstadisticasAdmin() {
               <CardTitle>Rendimiento por Especialista</CardTitle>
               <CardDescription>Métricas individuales de productividad y captación.</CardDescription>
             </div>
-            <button className="text-sm font-medium text-blue-600 hover:underline">Exportar reporte</button>
+            <Button 
+              onClick={exportarReporte}
+              variant="outline"
+              className="border-[#2E8B57] text-[#2E8B57] hover:bg-[#F0FFF4] flex items-center gap-2"
+            >
+              <Download size={16} />
+              Exportar reporte
+            </Button>
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -333,8 +391,13 @@ export function EstadisticasAdmin() {
               <div key={nutriologo.id_nutriologo} className="p-6 hover:bg-gray-50/50 transition-colors flex flex-col md:flex-row md:items-center gap-6">
                 <div className="flex-1">
                   <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold uppercase">
-                      {nutriologo.nombre[0]}{nutriologo.apellido[0]}
+                    <div className="h-10 w-10 rounded-full overflow-hidden border-2 border-[#D1E8D5] flex-shrink-0 bg-[#F0FFF4]">
+                      <ImageWithFallback
+                        src={nutriologo.foto_perfil || 'usu.webp'}
+                        alt={`${nutriologo.nombre} ${nutriologo.apellido}`}
+                        className="w-full h-full object-cover"
+                        fallbackSrc="usu.webp"
+                      />
                     </div>
                     <div>
                       <h4 className="font-bold text-gray-900">{nutriologo.nombre} {nutriologo.apellido}</h4>
