@@ -116,12 +116,14 @@ export function GestionPacientes() {
   const [pacientes, setPacientes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPaciente, setSelectedPaciente] = useState<any>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   // Estados para edición en el diálogo
   const [editPeso, setEditPeso] = useState('');
   const [editAltura, setEditAltura] = useState('');
   const [editObjetivo, setEditObjetivo] = useState('');
   const [editLoading, setEditLoading] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
 
   useEffect(() => {
     if (!user?.nutriologoId) {
@@ -246,7 +248,20 @@ export function GestionPacientes() {
     setEditPeso(paciente.peso.toString());
     setEditAltura(paciente.altura.toString());
     setEditObjetivo(paciente.objetivo);
+    setHasChanges(false);
+    setDialogOpen(true);
   };
+
+  // Detectar cambios en los campos editables
+  useEffect(() => {
+    if (selectedPaciente) {
+      const pesoChanged = editPeso !== selectedPaciente.peso.toString();
+      const alturaChanged = editAltura !== selectedPaciente.altura.toString();
+      const objetivoChanged = editObjetivo !== selectedPaciente.objetivo;
+      
+      setHasChanges(pesoChanged || alturaChanged || objetivoChanged);
+    }
+  }, [editPeso, editAltura, editObjetivo, selectedPaciente]);
 
   // Guardar cambios con validación de límites
   const handleGuardarCambios = async () => {
@@ -286,6 +301,15 @@ export function GestionPacientes() {
         )
       );
 
+      // Actualizar el paciente seleccionado con los nuevos valores
+      setSelectedPaciente(prev => ({
+        ...prev,
+        peso: pesoNum,
+        altura: alturaNum,
+        objetivo: editObjetivo.trim() || 'Sin objetivo definido'
+      }));
+
+      setHasChanges(false);
       toast.success('Datos actualizados correctamente');
     } catch (err: any) {
       console.error('Error al actualizar paciente:', err);
@@ -293,6 +317,23 @@ export function GestionPacientes() {
     } finally {
       setEditLoading(false);
     }
+  };
+
+  // Manejar cierre del diálogo
+  const handleCancel = () => {
+    if (selectedPaciente) {
+      setEditPeso(selectedPaciente.peso.toString());
+      setEditAltura(selectedPaciente.altura.toString());
+      setEditObjetivo(selectedPaciente.objetivo);
+      setHasChanges(false);
+    }
+  };
+
+  // Cerrar diálogo completamente
+  const handleCloseDialog = () => {
+    setDialogOpen(false);
+    setSelectedPaciente(null);
+    setHasChanges(false);
   };
 
   if (loading) {
@@ -394,167 +435,14 @@ export function GestionPacientes() {
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => handleVerDetalles(paciente)}
-                              className="border-2 border-[#D1E8D5] text-[#2E8B57] font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-[#F0FFF4] hover:border-[#2E8B57] transition-all px-4"
-                            >
-                              Ver Detalles
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent className="max-w-3xl rounded-[2.5rem] border-2 border-[#D1E8D5] bg-white p-0 overflow-hidden font-sans">
-                            <div className="custom-dialog-scroll overflow-y-auto max-h-[90vh] p-8">
-                              <DialogHeader>
-                                <DialogTitle className="text-2xl font-[900] text-[#2E8B57] uppercase tracking-[2px] mb-4 text-left flex items-center gap-4">
-                                  <div className="h-16 w-16 bg-[#F0FFF4] rounded-full overflow-hidden border-2 border-[#D1E8D5] flex-shrink-0">
-                                    <ImageWithFallback
-                                      src={paciente.foto_perfil}
-                                      alt={`${paciente.nombre} ${paciente.apellido}`}
-                                      className="w-full h-full object-cover"
-                                      fallbackSrc="usu.webp"
-                                    />
-                                  </div>
-                                  Perfil de {paciente.nombre} {paciente.apellido}
-                                </DialogTitle>
-                              </DialogHeader>
-                              {selectedPaciente && (
-                                <div className="space-y-8 mt-4">
-                                  {/* Contenedores fijos */}
-                                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                    <div className="bg-[#F8FFF9] p-3 rounded-xl border border-[#D1E8D5] min-h-[80px] flex flex-col">
-                                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">EMAIL</p>
-                                      <p className="text-xs font-black text-[#1A3026] break-all">{paciente.email}</p>
-                                    </div>
-
-                                    <div className="bg-[#F8FFF9] p-3 rounded-xl border border-[#D1E8D5] min-h-[80px] flex flex-col">
-                                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">EDAD</p>
-                                      <p className="text-xs font-black text-[#1A3026]">{paciente.edad} años</p>
-                                    </div>
-
-                                    <div className="bg-[#F8FFF9] p-3 rounded-xl border border-[#D1E8D5] min-h-[80px] flex flex-col">
-                                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">IMC</p>
-                                      <Badge className={`${categoria.color} border-2 px-3 py-1 rounded-xl font-black text-[9px] uppercase tracking-tighter shadow-none`}>
-                                        {calcularIMC(parseFloat(editPeso), parseFloat(editAltura))} - {categoriaIMC(Number(calcularIMC(parseFloat(editPeso), parseFloat(editAltura)))).label}
-                                      </Badge>
-                                    </div>
-
-                                    <div className="bg-[#F8FFF9] p-3 rounded-xl border border-[#D1E8D5] min-h-[80px] flex flex-col">
-                                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">PUNTOS</p>
-                                      <div className="flex items-center gap-2">
-                                        <Award size={14} className="text-yellow-500 flex-shrink-0" />
-                                        <p className="text-xs font-black text-[#1A3026]">{paciente.puntos}</p>
-                                      </div>
-                                    </div>
-
-                                    <div className="bg-[#F8FFF9] p-3 rounded-xl border border-[#D1E8D5] min-h-[80px] flex flex-col">
-                                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">REGISTRO</p>
-                                      <p className="text-xs font-black text-[#1A3026]">{paciente.fechaRegistro}</p>
-                                    </div>
-                                  </div>
-
-                                  {/* Campos editables como lista con Accordion */}
-                                  <Accordion type="single" collapsible className="w-full">
-                                    <AccordionItem value="altura">
-                                      <AccordionTrigger>ALTURA (CM)</AccordionTrigger>
-                                      <AccordionContent>
-                                        <Input
-                                          type="number"
-                                          min="0"
-                                          max="300"
-                                          step="0.1"
-                                          value={editAltura}
-                                          onChange={(e) => setEditAltura(e.target.value)}
-                                          className="text-xs border-[#D1E8D5] focus:border-[#2E8B57]"
-                                        />
-                                      </AccordionContent>
-                                    </AccordionItem>
-
-                                    <AccordionItem value="peso">
-                                      <AccordionTrigger>PESO ACTUAL (KG)</AccordionTrigger>
-                                      <AccordionContent>
-                                        <Input
-                                          type="number"
-                                          min="0"
-                                          max="700"
-                                          step="0.1"
-                                          value={editPeso}
-                                          onChange={(e) => setEditPeso(e.target.value)}
-                                          className="text-xs border-[#D1E8D5] focus:border-[#2E8B57]"
-                                        />
-                                      </AccordionContent>
-                                    </AccordionItem>
-
-                                    <AccordionItem value="objetivo">
-                                      <AccordionTrigger>OBJETIVO</AccordionTrigger>
-                                      <AccordionContent>
-                                        <Textarea
-                                          value={editObjetivo}
-                                          onChange={(e) => setEditObjetivo(e.target.value)}
-                                          className="text-xs border-[#D1E8D5] focus:border-[#2E8B57] min-h-[80px]"
-                                          placeholder="Ej: Perder 10 kg, ganar masa muscular..."
-                                        />
-                                      </AccordionContent>
-                                    </AccordionItem>
-                                  </Accordion>
-
-                                  <DialogFooter className="pt-6 border-t-2 border-dashed border-[#F0FFF4]">
-                                    <Button
-                                      variant="outline"
-                                      onClick={() => {
-                                        setSelectedPaciente(null);
-                                        setEditPeso('');
-                                        setEditAltura('');
-                                        setEditObjetivo('');
-                                      }}
-                                      className="border-2 border-[#D1E8D5] text-gray-500"
-                                      disabled={editLoading}
-                                    >
-                                      Cancelar
-                                    </Button>
-                                    <Button
-                                      onClick={handleGuardarCambios}
-                                      disabled={editLoading}
-                                      className="bg-[#2E8B57] hover:bg-[#1A3026] text-white flex items-center gap-2"
-                                    >
-                                      <Save size={16} />
-                                      {editLoading ? 'Guardando...' : 'Guardar Cambios'}
-                                    </Button>
-                                  </DialogFooter>
-
-                                  <div className="pt-6 border-t-2 border-dashed border-[#F0FFF4]">
-                                    <h4 className="text-xs font-black text-[#2E8B57] uppercase tracking-[3px] mb-6 flex items-center gap-2">
-                                      <TrendingUp size={16} /> Progreso Semanal de Calorías
-                                    </h4>
-                                    <div className="grid grid-cols-7 gap-2">
-                                      {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((dia, idx) => {
-                                        const calorias = selectedPaciente.caloriasConsumidas[idx];
-                                        const porcentaje = (calorias / selectedPaciente.metaCalorias) * 100;
-                                        return (
-                                          <div key={dia} className="text-center">
-                                            <div className="text-[9px] font-black text-gray-400 mb-2">{dia}</div>
-                                            <div className="h-24 w-full bg-[#F0FFF4] rounded-xl flex items-end justify-center border border-[#D1E8D5] overflow-hidden">
-                                              <div 
-                                                className={`w-full transition-all duration-500 ${
-                                                  porcentaje >= 90 && porcentaje <= 110 ? 'bg-[#2E8B57]' : 
-                                                  porcentaje < 90 ? 'bg-blue-400' : 'bg-red-400'
-                                                }`}
-                                                style={{ height: `${Math.min(porcentaje, 100)}%` }}
-                                              />
-                                            </div>
-                                            <div className="text-[9px] font-black text-[#1A3026] mt-2">{calorias}</div>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </DialogContent>
-                        </Dialog>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleVerDetalles(paciente)}
+                          className="border-2 border-[#D1E8D5] text-[#2E8B57] font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-[#F0FFF4] hover:border-[#2E8B57] transition-all px-4"
+                        >
+                          Ver Detalles
+                        </Button>
                       </TableCell>
                     </TableRow>
                   );
@@ -571,6 +459,157 @@ export function GestionPacientes() {
           </div>
         </div>
       </div>
+
+      {/* Diálogo de detalles del paciente */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-3xl rounded-[2.5rem] border-2 border-[#D1E8D5] bg-white p-0 overflow-hidden font-sans">
+          <div className="custom-dialog-scroll overflow-y-auto max-h-[90vh] p-8">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-[900] text-[#2E8B57] uppercase tracking-[2px] mb-4 text-left flex items-center gap-4">
+                <div className="h-16 w-16 bg-[#F0FFF4] rounded-full overflow-hidden border-2 border-[#D1E8D5] flex-shrink-0">
+                  <ImageWithFallback
+                    src={selectedPaciente?.foto_perfil}
+                    alt={`${selectedPaciente?.nombre} ${selectedPaciente?.apellido}`}
+                    className="w-full h-full object-cover"
+                    fallbackSrc="usu.webp"
+                  />
+                </div>
+                Perfil de {selectedPaciente?.nombre} {selectedPaciente?.apellido}
+              </DialogTitle>
+            </DialogHeader>
+            {selectedPaciente && (
+              <div className="space-y-8 mt-4">
+                {/* Contenedores fijos */}
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  <div className="bg-[#F8FFF9] p-3 rounded-xl border border-[#D1E8D5] min-h-[80px] flex flex-col">
+                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">EMAIL</p>
+                    <p className="text-xs font-black text-[#1A3026] break-all">{selectedPaciente.email}</p>
+                  </div>
+
+                  <div className="bg-[#F8FFF9] p-3 rounded-xl border border-[#D1E8D5] min-h-[80px] flex flex-col">
+                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">EDAD</p>
+                    <p className="text-xs font-black text-[#1A3026]">{selectedPaciente.edad} años</p>
+                  </div>
+
+                  <div className="bg-[#F8FFF9] p-3 rounded-xl border border-[#D1E8D5] min-h-[80px] flex flex-col">
+                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">IMC</p>
+                    <Badge className={`${categoriaIMC(Number(calcularIMC(parseFloat(editPeso), parseFloat(editAltura)))).color} border-2 px-3 py-1 rounded-xl font-black text-[9px] uppercase tracking-tighter shadow-none`}>
+                      {calcularIMC(parseFloat(editPeso), parseFloat(editAltura))} - {categoriaIMC(Number(calcularIMC(parseFloat(editPeso), parseFloat(editAltura)))).label}
+                    </Badge>
+                  </div>
+
+                  <div className="bg-[#F8FFF9] p-3 rounded-xl border border-[#D1E8D5] min-h-[80px] flex flex-col">
+                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">PUNTOS</p>
+                    <div className="flex items-center gap-2">
+                      <Award size={14} className="text-yellow-500 flex-shrink-0" />
+                      <p className="text-xs font-black text-[#1A3026]">{selectedPaciente.puntos}</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-[#F8FFF9] p-3 rounded-xl border border-[#D1E8D5] min-h-[80px] flex flex-col">
+                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">REGISTRO</p>
+                    <p className="text-xs font-black text-[#1A3026]">{selectedPaciente.fechaRegistro}</p>
+                  </div>
+                </div>
+
+                {/* Campos editables como lista con Accordion */}
+                <Accordion type="single" collapsible className="w-full">
+                  <AccordionItem value="altura">
+                    <AccordionTrigger>ALTURA (CM)</AccordionTrigger>
+                    <AccordionContent>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="300"
+                        step="0.1"
+                        value={editAltura}
+                        onChange={(e) => setEditAltura(e.target.value)}
+                        className="text-xs border-[#D1E8D5] focus:border-[#2E8B57]"
+                      />
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  <AccordionItem value="peso">
+                    <AccordionTrigger>PESO ACTUAL (KG)</AccordionTrigger>
+                    <AccordionContent>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="700"
+                        step="0.1"
+                        value={editPeso}
+                        onChange={(e) => setEditPeso(e.target.value)}
+                        className="text-xs border-[#D1E8D5] focus:border-[#2E8B57]"
+                      />
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  <AccordionItem value="objetivo">
+                    <AccordionTrigger>OBJETIVO</AccordionTrigger>
+                    <AccordionContent>
+                      <Textarea
+                        value={editObjetivo}
+                        onChange={(e) => setEditObjetivo(e.target.value)}
+                        className="text-xs border-[#D1E8D5] focus:border-[#2E8B57] min-h-[80px]"
+                        placeholder="Ej: Perder 10 kg, ganar masa muscular..."
+                      />
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+
+                {/* Botones de acción - solo visibles si hay cambios */}
+                {hasChanges && (
+                  <DialogFooter className="pt-6 border-t-2 border-dashed border-[#F0FFF4]">
+                    <Button
+                      variant="outline"
+                      onClick={handleCancel}
+                      className="border-2 border-[#D1E8D5] text-gray-500"
+                      disabled={editLoading}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      onClick={handleGuardarCambios}
+                      disabled={editLoading}
+                      className="bg-[#2E8B57] hover:bg-[#1A3026] text-white flex items-center gap-2"
+                    >
+                      <Save size={16} />
+                      {editLoading ? 'Guardando...' : 'Guardar Cambios'}
+                    </Button>
+                  </DialogFooter>
+                )}
+
+                <div className="pt-6 border-t-2 border-dashed border-[#F0FFF4]">
+                  <h4 className="text-xs font-black text-[#2E8B57] uppercase tracking-[3px] mb-6 flex items-center gap-2">
+                    <TrendingUp size={16} /> Progreso Semanal de Calorías
+                  </h4>
+                  <div className="grid grid-cols-7 gap-2">
+                    {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((dia, idx) => {
+                      const calorias = selectedPaciente.caloriasConsumidas[idx];
+                      const porcentaje = (calorias / selectedPaciente.metaCalorias) * 100;
+                      return (
+                        <div key={dia} className="text-center">
+                          <div className="text-[9px] font-black text-gray-400 mb-2">{dia}</div>
+                          <div className="h-24 w-full bg-[#F0FFF4] rounded-xl flex items-end justify-center border border-[#D1E8D5] overflow-hidden">
+                            <div 
+                              className={`w-full transition-all duration-500 ${
+                                porcentaje >= 90 && porcentaje <= 110 ? 'bg-[#2E8B57]' : 
+                                porcentaje < 90 ? 'bg-blue-400' : 'bg-red-400'
+                              }`}
+                              style={{ height: `${Math.min(porcentaje, 100)}%` }}
+                            />
+                          </div>
+                          <div className="text-[9px] font-black text-[#1A3026] mt-2">{calorias}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Estilo global del scroll */}
       <style jsx global>{`

@@ -14,9 +14,106 @@ import { toast } from 'sonner';
 import { supabase } from '@/app/context/supabaseClient';
 import { Clock } from 'lucide-react';
 
+// Componente de carga animado para perfil
+function AnimatedProfileLoadingScreen() {
+  const iconRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLDivElement>(null);
+  const dotsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const iconElement = iconRef.current;
+    const textElement = textRef.current;
+    const dotsElement = dotsRef.current;
+
+    if (iconElement) {
+      iconElement.animate(
+        [
+          { transform: 'rotate(0deg) scale(1)', opacity: 0.8 },
+          { transform: 'rotate(360deg) scale(1.2)', opacity: 1 },
+          { transform: 'rotate(720deg) scale(1)', opacity: 0.8 }
+        ],
+        {
+          duration: 3000,
+          iterations: Infinity,
+          easing: 'cubic-bezier(0.4, 0.0, 0.2, 1)'
+        }
+      );
+    }
+
+    if (textElement) {
+      textElement.animate(
+        [
+          { opacity: 0.5 },
+          { opacity: 1 },
+          { opacity: 0.5 }
+        ],
+        {
+          duration: 2000,
+          iterations: Infinity,
+          easing: 'ease-in-out'
+        }
+      );
+    }
+
+    if (dotsElement) {
+      const dots = dotsElement.children;
+      Array.from(dots).forEach((dot, index) => {
+        (dot as HTMLElement).animate(
+          [
+            { transform: 'scale(0.8)', opacity: 0.5 },
+            { transform: 'scale(1.2)', opacity: 1 },
+            { transform: 'scale(0.8)', opacity: 0.5 }
+          ],
+          {
+            duration: 1500,
+            delay: index * 200,
+            iterations: Infinity,
+            easing: 'ease-in-out'
+          }
+        );
+      });
+    }
+  }, []);
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[#F0FFF4]">
+      <div className="text-center">
+        <div className="flex justify-center mb-8">
+          <div 
+            ref={iconRef}
+            className="text-[#2E8B57]"
+          >
+            <User size={80} strokeWidth={1.5} />
+          </div>
+        </div>
+        
+        <div 
+          ref={textRef}
+          className="text-[#2E8B57] font-bold text-2xl mb-6"
+        >
+          Cargando información de perfil...
+        </div>
+        
+        <div 
+          ref={dotsRef}
+          className="flex justify-center gap-2"
+        >
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="w-3 h-3 rounded-full bg-[#2E8B57]"
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Perfil() {
   const { user, updateProfile } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
+  const [loading, setLoading] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [formData, setFormData] = useState({
@@ -30,6 +127,15 @@ export function Perfil() {
 
   const [previewImage, setPreviewImage] = useState<string | null>(user?.fotoPerfil || null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  // Simular carga inicial
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, []);
 
   // Detectar cambios
   const hasChanges = JSON.stringify(formData) !== JSON.stringify({
@@ -160,6 +266,10 @@ export function Perfil() {
     return num.toLocaleString('es-MX');
   };
 
+  if (loading) {
+    return <AnimatedProfileLoadingScreen />;
+  }
+
   return (
     <div className="min-h-screen p-6 md:p-10 font-sans bg-[#F8FFF9]">
       <div className="max-w-5xl mx-auto">
@@ -283,7 +393,7 @@ export function Perfil() {
                   </div>
                 </div>
 
-                {/* DESCRIPCIÓN */}
+                {/* SI SE SUBIO XD */}
                 <div>
                   <label className="text-[10px] font-black uppercase text-gray-500 ml-1">Descripción Profesional</label>
                   <textarea
@@ -319,5 +429,5 @@ export function Perfil() {
         </div>
       </div>
     </div>
-  );
+  ); 
 }

@@ -117,6 +117,7 @@ export function GestionDietas() {
 
   const [isEditing, setIsEditing] = useState(false);
   const [editingDietaId, setEditingDietaId] = useState<number | null>(null);
+  const [editingDietaData, setEditingDietaData] = useState<any>(null);
 
   const [dietaData, setDietaData] = useState({
     desayuno: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '05:30' },
@@ -299,12 +300,12 @@ export function GestionDietas() {
     }));
   };
 
-  const loadDietaForEdit = (dieta: any, dia: number) => {
+  const openEditDialog = (dieta: any) => {
     setIsEditing(true);
-    setEditingDietaId(dieta.id_dieta);
+    setEditingDietaData(dieta);
     setSelectedPaciente(dieta.id_paciente.toString());
-    setSelectedDia(dia);
-
+    setSelectedDia(1);
+    
     const emptyData = {
       desayuno: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '05:30' },
       colacion1: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '' },
@@ -314,7 +315,7 @@ export function GestionDietas() {
       snack: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '' },
     };
 
-    const detallesDia = dieta.dieta_detalle?.filter((d: any) => d.dia_semana === dia) || [];
+    const detallesDia = dieta.dieta_detalle?.filter((d: any) => d.dia_semana === 1) || [];
 
     detallesDia.forEach((det: any) => {
       const keyMap: Record<string, keyof typeof emptyData> = {
@@ -354,8 +355,8 @@ export function GestionDietas() {
     try {
       let dietaId: number;
 
-      if (isEditing && editingDietaId) {
-        dietaId = editingDietaId;
+      if (isEditing && editingDietaData) {
+        dietaId = editingDietaData.id_dieta;
       } else {
         const { data: existente } = await supabase
           .from('dietas')
@@ -436,7 +437,7 @@ export function GestionDietas() {
       setSearchQuery('');
       setAlimentosSearchQuery('');
       setIsEditing(false);
-      setEditingDietaId(null);
+      setEditingDietaData(null);
 
       await fetchData();
     } catch (err: any) {
@@ -777,6 +778,23 @@ export function GestionDietas() {
           />
         </div>
 
+        {/* Botón de Editar fuera de los pacientes */}
+        <div className="flex justify-end">
+          <Button
+            onClick={() => {
+              if (filteredDietas.length > 0) {
+                openEditDialog(filteredDietas[0]);
+              } else {
+                toast.warning('No hay dietas para editar');
+              }
+            }}
+            className="bg-[#2E8B57] hover:bg-[#1A3026] text-white font-black py-4 px-6 rounded-xl text-xs uppercase tracking-widest flex items-center gap-2 shadow-lg"
+          >
+            <Edit className="h-4 w-4" />
+            Editar Plan
+          </Button>
+        </div>
+
         {/* Lista de dietas con Accordion */}
         <div className="space-y-4">
           {filteredDietas.length === 0 ? (
@@ -806,16 +824,6 @@ export function GestionDietas() {
                           </p>
                         </div>
                         <div className="flex gap-3">
-                          <Button 
-                            variant="outline" 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              loadDietaForEdit(dieta, 1);
-                            }}
-                            className="border-2 border[#D1E8D5] text[#2E8B57] font-black text-[10px] uppercase rounded-xl px-6 h-10 flex items-center gap-2"
-                          >
-                            <Edit className="h-4 w-4" /> Editar
-                          </Button>
                           <Button 
                             variant="outline" 
                             onClick={(e) => {
