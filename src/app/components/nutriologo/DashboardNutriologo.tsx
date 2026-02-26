@@ -5,17 +5,21 @@ import { useAuth } from '@/app/context/useAuth';
 import { supabase } from '@/app/context/supabaseClient';
 import { toast } from 'sonner';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { Avatar, AvatarFallback, AvatarImage } from '@/app/components/ui/avatar';
 
 const COLORS = ['#2E8B57', '#3CB371', '#D1E8D5'];
 
-// Componente de carga animado
+// Ajusta este base URL según tu bucket real en Supabase Storage
+// Ejemplo: si tu bucket se llama "avatars" o "fotos-perfil", cámbialo aquí
+const STORAGE_PUBLIC_URL = 'https://hthnkzwjotwqhvjgqhfv.supabase.co/storage/v1/object/public/perfiles/';
+
+// Componente de carga animado (sin cambios)
 function AnimatedLoadingScreen() {
   const iconRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
   const dotsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Animación del icono (panel de control)
     const iconElement = iconRef.current;
     const textElement = textRef.current;
     const dotsElement = dotsRef.current;
@@ -138,26 +142,22 @@ export function DashboardNutriologo() {
     setLoading(true);
     setErrorMsg('');
     try {
-      // 1. Obtener id_nutriologo desde id_auth_user (UUID)
+      // 1. Obtener id_nutriologo y tarifa
       const { data: nutriologo, error: errNut } = await supabase
         .from('nutriologos')
-        .select('id_nutriologo, nombre')
-        .eq('id_auth_user', user.id) // UUID de auth
+        .select('id_nutriologo, nombre, tarifa_consulta')
+        .eq('id_auth_user', user.id)
         .single();
 
-      if (errNut) {
+      if (errNut || !nutriologo) {
         console.error('[DashboardNutriologo] Error al buscar nutriólogo:', errNut);
-        throw new Error('Error al verificar tu perfil en la base de datos');
-      }
-
-      if (!nutriologo) {
-        throw new Error('No se encontró tu perfil de nutriólogo. Contacta al administrador para configurarlo.');
+        throw new Error('No se encontró tu perfil de nutriólogo');
       }
 
       const nutriologoId = nutriologo.id_nutriologo;
-      console.log('[DashboardNutriologo] ID Nutriólogo encontrado:', nutriologoId);
+      const tarifa = nutriologo.tarifa_consulta || 0;
 
-      // 2. Pacientes asignados
+      // 2. Conteo de pacientes
       const { count: misPacientesCount, error: errPac } = await supabase
         .from('paciente_nutriologo')
         .select('count', { count: 'exact', head: true })
@@ -166,7 +166,7 @@ export function DashboardNutriologo() {
 
       if (errPac) throw errPac;
 
-      // 3. Citas del nutriólogo
+      // 3. Todas las citas (para conteos)
       const { data: citas, error: errCitas } = await supabase
         .from('citas')
         .select('id_cita, fecha_hora, estado')
@@ -184,7 +184,7 @@ export function DashboardNutriologo() {
       const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 19);
       const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString().slice(0, 19);
 
-      const { data: pagosMesActual, error: errPagosActual } = await supabase
+      const { data: pagosMesActual, error: errPagos } = await supabase
         .from('pagos')
         .select('monto')
         .eq('id_nutriologo', nutriologoId)
@@ -192,7 +192,7 @@ export function DashboardNutriologo() {
         .gte('fecha_pago', currentMonthStart)
         .lte('fecha_pago', currentMonthEnd);
 
-      if (errPagosActual) throw errPagosActual;
+      if (errPagos) throw errPagos;
 
       const ingresosMes = pagosMesActual?.reduce((sum, p) => sum + Number(p.monto || 0), 0) || 0;
 
@@ -205,7 +205,7 @@ export function DashboardNutriologo() {
         const nombreMes = d.toLocaleString('es-MX', { month: 'short' });
         const mesDisplay = nombreMes.charAt(0).toUpperCase() + nombreMes.slice(1);
 
-        const { data: pagosMes, error: errPagosMes } = await supabase
+        const { data: pagosMes, error } = await supabase
           .from('pagos')
           .select('monto')
           .eq('id_nutriologo', nutriologoId)
@@ -213,23 +213,22 @@ export function DashboardNutriologo() {
           .gte('fecha_pago', mesStart)
           .lte('fecha_pago', mesEnd);
 
-        if (errPagosMes) {
-          ingresosPorMes.push({ mes: mesDisplay, ingresos: 0 });
-          continue;
-        }
-
         const ingresos = pagosMes?.reduce((sum, p) => sum + Number(p.monto || 0), 0) || 0;
         ingresosPorMes.push({ mes: mesDisplay, ingresos });
       }
 
-      // 6. Próximas citas
-      const { data: proximasCitas, error: errProx } = await supabase
+      // 6. Próximas citas + foto_perfil
+      const { data: proximasCitasRaw, error: errProx } = await supabase
         .from('citas')
         .select(`
           id_cita,
           fecha_hora,
           estado,
-          pacientes!inner (nombre, apellido)
+          pacientes!inner (
+            nombre,
+            apellido,
+            foto_perfil
+          )
         `)
         .eq('id_nutriologo', nutriologoId)
         .in('estado', ['confirmada', 'pendiente'])
@@ -238,6 +237,22 @@ export function DashboardNutriologo() {
         .limit(6);
 
       if (errProx) throw errProx;
+
+      // Construir URLs públicas para las fotos
+      const proximasCitas = proximasCitasRaw.map(cita => {
+        let fotoUrl = cita.pacientes?.foto_perfil;
+
+        // Si es solo nombre de archivo → agregar base URL pública
+        if (fotoUrl && !fotoUrl.startsWith('http')) {
+          fotoUrl = `${STORAGE_PUBLIC_URL}${fotoUrl}`;
+        }
+
+        return {
+          ...cita,
+          monto: tarifa,
+          foto_perfil: fotoUrl || null
+        };
+      });
 
       // 7. Citas por estado para gráfica
       const citasPorEstado = [
@@ -252,14 +267,12 @@ export function DashboardNutriologo() {
         citasCompletadas,
         citasTotales,
         ingresosMes,
-        proximasCitas: proximasCitas || [],
+        proximasCitas,
         citasPorEstado,
         ingresosPorMes,
       });
-
-      console.log('[DashboardNutriologo] Carga completada exitosamente');
     } catch (err: any) {
-      console.error('Error cargando dashboard nutriólogo:', err);
+      console.error('Error cargando dashboard:', err);
       toast.error('No se pudieron cargar las estadísticas');
       setErrorMsg(err.message || 'Error desconocido');
     } finally {
@@ -267,9 +280,7 @@ export function DashboardNutriologo() {
     }
   };
 
-  if (loading) {
-    return <AnimatedLoadingScreen />;
-  }
+  if (loading) return <AnimatedLoadingScreen />;
 
   if (errorMsg) {
     return (
@@ -278,7 +289,7 @@ export function DashboardNutriologo() {
         <p>{errorMsg}</p>
         <button 
           onClick={fetchDashboardData}
-          className="px-6 py-3 bg-[#2E8B57] text-white rounded-xl hover:bg-[#256e45] transition-colors"
+          className="px-6 py-3 bg-[#2E8B57] text-white rounded-xl hover:bg-[#256e45]"
         >
           Reintentar
         </button>
@@ -290,7 +301,7 @@ export function DashboardNutriologo() {
     <div className="min-h-screen p-6 md:p-10 font-sans bg-[#F8FFF9] space-y-10">
       <div className="max-w-7xl mx-auto space-y-10">
         
-        {/* Encabezado estilo Perfil */}
+        {/* Encabezado */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 px-2">
           <div>
             <div className="inline-flex flex-col items-start">
@@ -305,7 +316,7 @@ export function DashboardNutriologo() {
           </div>
         </div>
 
-        {/* Tarjetas de estadísticas */}
+        {/* Tarjetas estadísticas */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {[
             { title: 'Mis Pacientes', val: dashboardData.misPacientesCount, desc: 'Pacientes activos', icon: Users, color: '#2E8B57' },
@@ -378,35 +389,49 @@ export function DashboardNutriologo() {
           </div>
         </div>
 
-        {/* Próximas citas */}
+        {/* Próximas citas con AVATAR */}
         <div className="bg-white p-8 rounded-[2.5rem] border-2 border-[#D1E8D5] shadow-sm">
           <h3 className="text-lg font-black text-[#1A3026] uppercase tracking-[3px] mb-8">Próximas Citas</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {dashboardData.proximasCitas.map((cita) => (
-              <div key={cita.id_cita} className="flex items-center justify-between p-5 bg-white border-2 border-[#F0FFF4] hover:border-[#D1E8D5] rounded-3xl transition-all group">
-                <div className="flex items-center gap-4">
-                  <div className="h-14 w-14 bg-[#F0FFF4] rounded-2xl flex items-center justify-center border border-[#D1E8D5]">
-                    <Users className="h-6 w-6 text-[#2E8B57]" />
+            {dashboardData.proximasCitas.map((cita) => {
+              const paciente = cita.pacientes;
+              const iniciales = `${paciente?.nombre?.charAt(0) || ''}${paciente?.apellido?.charAt(0) || ''}`.toUpperCase() || '?';
+
+              return (
+                <div 
+                  key={cita.id_cita} 
+                  className="flex items-center justify-between p-5 bg-white border-2 border-[#F0FFF4] hover:border-[#D1E8D5] rounded-3xl transition-all group"
+                >
+                  <div className="flex items-center gap-4">
+                    <Avatar className="h-14 w-14 border-2 border-[#D1E8D5] group-hover:border-[#2E8B57] transition-colors">
+                      <AvatarImage 
+                        src={cita.foto_perfil || ''} 
+                        alt={`${paciente?.nombre || ''} ${paciente?.apellido || ''}`} 
+                      />
+                      <AvatarFallback className="bg-[#F0FFF4] text-[#2E8B57] font-black">
+                        {iniciales}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="font-black text-[#1A3026] uppercase text-sm tracking-tight">
+                        {paciente?.nombre || 'Paciente'} {paciente?.apellido || ''}
+                      </p>
+                      <p className="text-[11px] font-bold text-[#3CB371] uppercase tracking-tighter">
+                        {new Date(cita.fecha_hora).toLocaleDateString('es-MX')} • {new Date(cita.fecha_hora).toLocaleTimeString('es-MX', {hour: '2-digit', minute:'2-digit'})}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-black text-[#1A3026] uppercase text-sm tracking-tight">
-                      {cita.pacientes?.nombre || 'Paciente'} {cita.pacientes?.apellido || ''}
+                  <div className="text-right">
+                    <p className="font-black text-[#2E8B57] text-lg">
+                      ${cita.monto.toLocaleString()}.00
                     </p>
-                    <p className="text-[11px] font-bold text-[#3CB371] uppercase tracking-tighter">
-                      {new Date(cita.fecha_hora).toLocaleDateString('es-MX')} • {new Date(cita.fecha_hora).toLocaleTimeString('es-MX', {hour: '2-digit', minute:'2-digit'})}
-                    </p>
+                    <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-full ${cita.estado === 'completada' ? 'bg-green-100 text-green-600' : 'bg-orange-100 text-orange-600'}`}>
+                      {cita.estado}
+                    </span>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="font-black text-[#2E8B57] text-lg">
-                    $800.00 {/* Puedes agregar join a pagos si necesitas monto real */}
-                  </p>
-                  <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-full ${cita.estado === 'completada' ? 'bg-green-100 text-green-600' : 'bg-orange-100 text-orange-600'}`}>
-                    {cita.estado}
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
             {dashboardData.proximasCitas.length === 0 && (
               <div className="col-span-2 text-center text-gray-500 py-8">
                 No hay citas próximas programadas

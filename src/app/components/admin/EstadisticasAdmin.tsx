@@ -6,13 +6,14 @@ import {
 } from 'recharts';
 import { Users, Calendar, TrendingUp, DollarSign, Award, ArrowUpRight, BarChart3, Download } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select';
 import { supabase } from '@/app/context/supabaseClient';
 import { toast } from 'sonner';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {ImageWithFallback} from '@/app/components/figma/ImageWithFallback';
 
-// Componente de carga animado (tu versión original, sin cambios)
+// Componente de carga animado (sin cambios)
 function AnimatedLoadingScreen() {
   const iconRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
@@ -123,79 +124,160 @@ export function EstadisticasAdmin() {
   const [ingresosPorMes, setIngresosPorMes] = useState([]);
   const [rendimientoNutriologos, setRendimientoNutriologos] = useState([]);
 
+  // Estado para el mes y año seleccionados
+  const now = new Date();
+  const currentYear = now.getFullYear(); // 2026 en tu caso
+  const [selectedYear, setSelectedYear] = useState(currentYear);
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1); // 1-12
+
+  // Rango de años: desde el actual hasta +10 años futuros (2026–2036)
+  const minYear = currentYear;
+  const maxYear = currentYear + 10;
+  const years = Array.from(
+    { length: maxYear - minYear + 1 },
+    (_, i) => minYear + i
+  );
+
+  // Meses
+  const months = [
+    { value: 1, label: 'Enero' },
+    { value: 2, label: 'Febrero' },
+    { value: 3, label: 'Marzo' },
+    { value: 4, label: 'Abril' },
+    { value: 5, label: 'Mayo' },
+    { value: 6, label: 'Junio' },
+    { value: 7, label: 'Julio' },
+    { value: 8, label: 'Agosto' },
+    { value: 9, label: 'Septiembre' },
+    { value: 10, label: 'Octubre' },
+    { value: 11, label: 'Noviembre' },
+    { value: 12, label: 'Diciembre' },
+  ];
+
   useEffect(() => {
     fetchStatistics();
-  }, []); // Solo una vez al montar, como tu original
+  }, [selectedYear, selectedMonth]);
 
   const fetchStatistics = async () => {
     setLoading(true);
     setErrorMsg('');
     try {
-      console.log('[ESTADISTICAS] Iniciando carga...');
+      console.log(`[ESTADISTICAS] Cargando para mes ${selectedMonth}/${selectedYear}`);
 
-      // 1. Total pacientes activos
+      // Calcular rango de fechas del mes seleccionado
+      const startDate = new Date(selectedYear, selectedMonth - 1, 1);
+      const endDate = new Date(selectedYear, selectedMonth, 0, 23, 59, 59);
+
+      const startISO = startDate.toISOString().slice(0, 19);
+      const endISO = endDate.toISOString().slice(0, 19);
+
+      // 1. Total pacientes activos (global)
       const { count: totalPacientes } = await supabase
         .from('pacientes')
         .select('*', { count: 'exact', head: true })
         .eq('activo', true);
 
-      // 2. Total nutriólogos activos
+      // 2. Total nutriólogos activos (global)
       const { count: totalNutriologos } = await supabase
         .from('nutriologos')
         .select('*', { count: 'exact', head: true })
         .eq('activo', true);
 
-      // 3. Citas e ingresos del mes actual (sin duplicados)
-      const now = new Date();
-      const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 19);
-      const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString().slice(0, 19);
-
-      const { data: citasMesData } = await supabase
+      // 3. Citas del mes seleccionado
+      const { count: citasMes } = await supabase
         .from('citas')
-        .select('id_cita')
-        .gte('fecha_hora', currentMonthStart)
-        .lte('fecha_hora', currentMonthEnd);
+        .select('*', { count: 'exact', head: true })
+        .gte('fecha_hora', startISO)
+        .lte('fecha_hora', endISO);
 
-      const citasMes = citasMesData?.length || 0;
-
+      // 4. Ingresos del mes seleccionado
       const { data: pagosMesData } = await supabase
         .from('pagos')
         .select('monto')
         .eq('estado', 'completado')
-        .gte('fecha_pago', currentMonthStart)
-        .lte('fecha_pago', currentMonthEnd);
+        .gte('fecha_pago', startISO)
+        .lte('fecha_pago', endISO);
 
       const ingresosMes = pagosMesData?.reduce((sum, p) => sum + Number(p.monto || 0), 0) || 0;
 
-      console.log('[INGRESOS] Pagos del mes:', pagosMesData);
+      console.log(`[INGRESOS] Pagos del mes ${selectedMonth}/${selectedYear}:`, pagosMesData);
       console.log('[INGRESOS] Total calculado:', ingresosMes);
 
-      // 4. Gráficas mensuales (últimos 6 meses)
-      const { data: monthlyStats } = await supabase
-        .rpc('get_monthly_stats', { last_months: 6 });
+      // 5. Datos para gráficas (últimos 6 meses, independientemente del seleccionado)
+      const visitasMensuales = [];
+      const ingresosMensuales = [];
+      const mesesLabels = [];
 
-      const meses = monthlyStats?.map(stat => ({
-        mes: stat.mes,
-        visitas: Number(stat.visitas),
-        ingresos: Number(stat.ingresos),
-      })) || [];
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const mesStart = d.toISOString().slice(0, 19);
+        const mesEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59).toISOString().slice(0, 19);
+        const nombreMes = d.toLocaleString('es-MX', { month: 'short' });
+        const mesDisplay = nombreMes.charAt(0).toUpperCase() + nombreMes.slice(1);
 
-      // 5. Rendimiento por nutriólogo con fotos
-      const { data: rendimientoData } = await supabase
-        .rpc('get_nutriologos_rendimiento');
+        const { count: visitas } = await supabase
+          .from('citas')
+          .select('*', { count: 'exact', head: true })
+          .gte('fecha_hora', mesStart)
+          .lte('fecha_hora', mesEnd);
 
-      const rendimientoConFotos = (rendimientoData || []).map(n => {
-        let fotoUrl = 'usu.webp';
-        if (n.foto_perfil && n.foto_perfil.trim() !== '') {
-          fotoUrl = n.foto_perfil; // Ya es URL completa en tu BD
-        }
-        return { ...n, foto_perfil: fotoUrl };
-      });
+        const { data: pagos } = await supabase
+          .from('pagos')
+          .select('monto')
+          .eq('estado', 'completado')
+          .gte('fecha_pago', mesStart)
+          .lte('fecha_pago', mesEnd);
 
-      setStats({ totalPacientes, totalNutriologos, citasMes, ingresosMes });
-      setVisitasPorMes(meses.map(m => ({ mes: m.mes, visitas: m.visitas })));
-      setIngresosPorMes(meses.map(m => ({ mes: m.mes, ingresos: m.ingresos })));
-      setRendimientoNutriologos(rendimientoConFotos);
+        const ingresos = pagos?.reduce((sum, p) => sum + Number(p.monto || 0), 0) || 0;
+
+        mesesLabels.push(mesDisplay);
+        visitasMensuales.push(visitas || 0);
+        ingresosMensuales.push(ingresos);
+      }
+
+      // 6. Rendimiento por nutriólogo (global)
+      const { data: nutriologos } = await supabase
+        .from('nutriologos')
+        .select('id_nutriologo, nombre, apellido, foto_perfil');
+
+      const rendimiento = [];
+
+      for (const n of nutriologos || []) {
+        const { count: pacientes } = await supabase
+          .from('paciente_nutriologo')
+          .select('*', { count: 'exact', head: true })
+          .eq('id_nutriologo', n.id_nutriologo)
+          .eq('activo', true);
+
+        const { count: citas } = await supabase
+          .from('citas')
+          .select('*', { count: 'exact', head: true })
+          .eq('id_nutriologo', n.id_nutriologo);
+
+        const { data: pagosNutri } = await supabase
+          .from('pagos')
+          .select('monto')
+          .eq('id_nutriologo', n.id_nutriologo)
+          .eq('estado', 'completado');
+
+        const ingresos = pagosNutri?.reduce((sum, p) => sum + Number(p.monto || 0), 0) || 0;
+
+        rendimiento.push({
+          id_nutriologo: n.id_nutriologo,
+          nombre: n.nombre,
+          apellido: n.apellido,
+          foto_perfil: n.foto_perfil,
+          pacientes: pacientes || 0,
+          citas: citas || 0,
+          ingresos,
+        });
+      }
+
+      // Actualizar estados
+      setStats({ totalPacientes: totalPacientes || 0, totalNutriologos: totalNutriologos || 0, citasMes, ingresosMes });
+      setVisitasPorMes(mesesLabels.map((mes, i) => ({ mes, visitas: visitasMensuales[i] })));
+      setIngresosPorMes(mesesLabels.map((mes, i) => ({ mes, ingresos: ingresosMensuales[i] })));
+      setRendimientoNutriologos(rendimiento);
 
     } catch (err: any) {
       console.error('[ESTADISTICAS] Error:', err);
@@ -222,7 +304,7 @@ export function EstadisticasAdmin() {
 
     doc.setFontSize(12);
     doc.setTextColor(0);
-    doc.text(`Generado: ${new Date().toLocaleDateString('es-MX')}`, 20, 55);
+    doc.text(`Período: ${months.find(m => m.value === selectedMonth)?.label} ${selectedYear}`, 20, 55);
 
     doc.setFontSize(16);
     doc.text('Resumen General', 20, 70);
@@ -261,7 +343,7 @@ export function EstadisticasAdmin() {
       alternateRowStyles: { fillColor: [245, 255, 245] }
     });
 
-    doc.save(`Reporte_NutriU_${new Date().toISOString().slice(0,10)}.pdf`);
+    doc.save(`Reporte_NutriU_${selectedMonth}-${selectedYear}.pdf`);
     toast.success('Reporte exportado como PDF');
   };
 
@@ -286,27 +368,54 @@ export function EstadisticasAdmin() {
 
   return (
     <div className="p-6 space-y-8 bg-gray-50/50 min-h-screen">
-      {/* Header con gradiente sutil */}
+      {/* Header con selector de mes/año */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-200 pb-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">Panel de Control</h1>
           <p className="text-muted-foreground mt-1 text-lg">Análisis de rendimiento y métricas del consultorio.</p>
         </div>
-        <div className="flex items-center gap-2 bg-white p-2 rounded-lg shadow-sm border">
+        <div className="flex items-center gap-3 bg-white p-2 rounded-lg shadow-sm border">
           <Calendar className="h-5 w-5 text-gray-500" />
-          <span className="font-medium text-sm">
-            {new Date().toLocaleString('es-MX', { month: 'long', year: 'numeric' })}
-          </span>
+          <Select 
+            value={`${selectedMonth}`} 
+            onValueChange={(val) => setSelectedMonth(Number(val))}
+          >
+            <SelectTrigger className="w-[140px] border-none focus:ring-0">
+              <SelectValue placeholder="Mes" />
+            </SelectTrigger>
+            <SelectContent>
+              {months.map(m => (
+                <SelectItem key={m.value} value={m.value.toString()}>
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select 
+            value={`${selectedYear}`} 
+            onValueChange={(val) => setSelectedYear(Number(val))}
+          >
+            <SelectTrigger className="w-[120px] border-none focus:ring-0">
+              <SelectValue placeholder="Año" />
+            </SelectTrigger>
+            <SelectContent>
+              {years.map(y => (
+                <SelectItem key={y} value={y.toString()}>
+                  {y}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
-      {/* Tarjetas de Resumen con Hover Effects */}
+      {/* Tarjetas de Resumen */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
           { title: 'Pacientes Totales', value: stats.totalPacientes, icon: Users, color: 'text-emerald-600', bg: 'bg-emerald-50', desc: 'Usuarios registrados' },
           { title: 'Nutriólogos', value: stats.totalNutriologos, icon: Award, color: 'text-blue-600', bg: 'bg-blue-50', desc: 'Equipo activo' },
-          { title: 'Citas del Mes', value: stats.citasMes, icon: Calendar, color: 'text-purple-600', bg: 'bg-purple-50', desc: '+ variación vs anterior' },
-          { title: 'Ingresos Mensuales', value: `$${stats.ingresosMes.toLocaleString('es-MX')}`, icon: DollarSign, color: 'text-amber-600', bg: 'bg-amber-50', desc: 'Facturación bruta' },
+          { title: 'Citas del Mes', value: stats.citasMes, icon: Calendar, color: 'text-purple-600', bg: 'bg-purple-50', desc: 'Mes seleccionado' },
+          { title: 'Ingresos Mensuales', value: `$${stats.ingresosMes.toLocaleString('es-MX')}`, icon: DollarSign, color: 'text-amber-600', bg: 'bg-amber-50', desc: 'Mes seleccionado' },
         ].map((item, i) => (
           <Card key={i} className="hover:shadow-md transition-shadow border-none shadow-sm outline outline-1 outline-gray-200">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
@@ -326,7 +435,7 @@ export function EstadisticasAdmin() {
         ))}
       </div>
 
-      {/* Sección de Gráficas de Tendencia */}
+      {/* Gráficas */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <Card className="shadow-sm border-none ring-1 ring-gray-200">
           <CardHeader>
@@ -367,7 +476,7 @@ export function EstadisticasAdmin() {
         </Card>
       </div>
 
-      {/* Listado de Rendimiento */}
+      {/* Rendimiento por Especialista */}
       <Card className="shadow-sm border-none ring-1 ring-gray-200 overflow-hidden">
         <CardHeader className="bg-white border-b">
           <div className="flex items-center justify-between">
@@ -413,9 +522,7 @@ export function EstadisticasAdmin() {
                   </div>
                   <div className="text-center md:text-left">
                     <p className="text-xs uppercase tracking-wider text-gray-400 font-bold mb-1">Citas</p>
-                    <p className="text-xl font-bold text-blue-600">
-                      {nutriologo.citas}
-                    </p>
+                    <p className="text-xl font-bold text-blue-600">{nutriologo.citas}</p>
                   </div>
                   <div className="text-center md:text-left">
                     <p className="text-xs uppercase tracking-wider text-gray-400 font-bold mb-1">Ingresos</p>

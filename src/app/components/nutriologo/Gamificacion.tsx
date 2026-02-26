@@ -21,20 +21,23 @@ import {
 } from 'lucide-react';
 
 // ────────────────────────────────────────────────────────────────
-// LÓGICA DE GAMIFICACIÓN (ajustada a SOLO 4 rangos como en móvil)
+// LÓGICA DE GAMIFICACIÓN (ajustada: sin rango <100 pts, nombres como "Bronce")
 // ────────────────────────────────────────────────────────────────
 const getNivelPaciente = (puntos: number) => {
-  if (puntos >= 5000) return { nivel: 'Diamante', color: 'text-blue-600', border: 'border-blue-200', bgColor: 'bg-blue-50', icon: Crown, level: 'Leyenda' };
-  if (puntos >= 1000) return { nivel: 'Oro', color: 'text-yellow-600', border: 'border-yellow-200', bgColor: 'bg-yellow-50', icon: Award, level: 'Avanzado' };
-  if (puntos >= 100) return { nivel: 'Plata', color: 'text-slate-500', border: 'border-slate-200', bgColor: 'bg-slate-50', icon: Star, level: 'Intermedio' };
-  return { nivel: 'Cobre', color: 'text-orange-600', border: 'border-orange-200', bgColor: 'bg-orange-50', icon: Target, level: 'Principiante' };
+  if (puntos >= 10000) return { nivel: 'Diamante', color: 'text-blue-600', border: 'border-blue-200', bgColor: 'bg-blue-50', icon: Crown, level: 'Leyenda' };
+  if (puntos >= 5000) return { nivel: 'Oro', color: 'text-yellow-600', border: 'border-yellow-200', bgColor: 'bg-yellow-50', icon: Award, level: 'Avanzado' };
+  if (puntos >= 1000) return { nivel: 'Plata', color: 'text-slate-500', border: 'border-slate-200', bgColor: 'bg-slate-50', icon: Star, level: 'Intermedio' };
+  if (puntos >= 100) return { nivel: 'Bronce', color: 'text-orange-600', border: 'border-orange-200', bgColor: 'bg-orange-50', icon: Target, level: 'Principiante' };
+  return { nivel: 'Sin Rango', color: 'text-gray-600', border: 'border-gray-200', bgColor: 'bg-gray-50', icon: Target, level: 'Novato' };
 };
 
 const getProgresoNivel = (puntos: number) => {
-  if (puntos >= 5000) return 100;
+  if (puntos < 100) return (puntos / 100) * 100;
+  if (puntos >= 10000) return 100;
+  if (puntos >= 5000) return ((puntos - 5000) / 5000) * 100;
   if (puntos >= 1000) return ((puntos - 1000) / 4000) * 100;
   if (puntos >= 100) return ((puntos - 100) / 900) * 100;
-  return (puntos / 100) * 100;
+  return 0;
 };
 
 // Componente de carga animado (sin cambios)
@@ -404,13 +407,13 @@ export function Gamificacion() {
           </div>
         </div>
 
-        {/* Niveles - SOLO 4 RANGOS */}
+        {/* Niveles - AJUSTADOS A UMBRALES Y NOMBRES */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { n: 'Cobre', pts: '0-99', color: 'text-orange-600', bg: 'bg-orange-50', icon: Target, level: 'Principiante' },
-            { n: 'Plata', pts: '100-999', color: 'text-slate-500', bg: 'bg-slate-50', icon: Star, level: 'Intermedio' },
-            { n: 'Oro', pts: '1000-4999', color: 'text-yellow-600', bg: 'bg-yellow-50', icon: Award, level: 'Avanzado' },
-            { n: 'Diamante', pts: '5000+', color: 'text-blue-600', bg: 'bg-blue-50', icon: Crown, level: 'Leyenda' },
+            { n: 'Bronce', pts: '100-999', color: 'text-orange-600', bg: 'bg-orange-50', icon: Target, level: 'Principiante' },
+            { n: 'Plata', pts: '1000-4999', color: 'text-slate-500', bg: 'bg-slate-50', icon: Star, level: 'Intermedio' },
+            { n: 'Oro', pts: '5000-9999', color: 'text-yellow-600', bg: 'bg-yellow-50', icon: Award, level: 'Avanzado' },
+            { n: 'Diamante', pts: '10000+', color: 'text-blue-600', bg: 'bg-blue-50', icon: Crown, level: 'Leyenda' },
           ].map((lvl) => (
             <Card key={lvl.n} className="rounded-[2rem] border-2 border-[#D1E8D5] overflow-hidden shadow-none">
               <CardContent className={`p-6 flex flex-col items-center justify-center text-center space-y-2 ${lvl.bg}`}>
@@ -498,7 +501,7 @@ export function Gamificacion() {
                 </div>
               ) : (
                 pacientesFiltrados.map((paciente) => {
-                  const cumplimiento = (paciente.puntos / 5000) * 100;
+                  const cumplimiento = (paciente.puntos / 10000) * 100;
                   const esExitoso = cumplimiento >= 90;
                   const nivel = getNivelPaciente(paciente.puntos);
                   return (
@@ -506,7 +509,7 @@ export function Gamificacion() {
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="font-black text-[#1A3026] uppercase text-xs">{paciente.nombre}</p>
-                          <p className="text-[10px] font-bold text-gray-400 tracking-tight">META: 5000 PTS</p>
+                          <p className="text-[10px] font-bold text-gray-400 tracking-tight">META: 10000 PTS</p>
                         </div>
                         <div className={`px-4 py-2 rounded-xl border-2 font-black text-[10px] uppercase shadow-sm ${
                           esExitoso ? 'bg-[#F0FFF4] border-[#D1E8D5] text-[#2E8B57]' : 'bg-orange-50 border-orange-100 text-orange-600'

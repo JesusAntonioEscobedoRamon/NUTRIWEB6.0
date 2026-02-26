@@ -338,6 +338,23 @@ export function GestionCitas() {
     }
   };
 
+  const marcarComoConfirmada = async (citaId: number) => {
+    try {
+      const { error } = await supabase
+        .from('citas')
+        .update({ estado: 'confirmada' })
+        .eq('id_cita', citaId);
+
+      if (error) throw error;
+
+      toast.success('Cita confirmada exitosamente');
+      setCitas(prev => prev.map(c => c.id === citaId ? { ...c, estado: 'confirmada' } : c));
+    } catch (err: any) {
+      toast.error('Error al confirmar la cita');
+      console.error(err);
+    }
+  };
+
   const marcarComoCompletada = async (citaId: number) => {
     try {
       const { error } = await supabase
@@ -566,6 +583,16 @@ export function GestionCitas() {
                       <Badge className={`${cita.pagada ? 'bg-[#F0FFF4] text-[#2E8B57]' : 'bg-red-50 text-red-600'} border-2 px-3 py-1 rounded-xl font-black text-[9px] uppercase shadow-none`}>
                         {cita.pagada ? 'PAGADA' : 'PENDIENTE PAGO'}
                       </Badge>
+                      {cita.estado === 'pendiente' && (
+                        <Button 
+                          size="sm"
+                          onClick={() => marcarComoConfirmada(cita.id)}
+                          className="bg-white border-2 border-[#2E8B57] text-[#2E8B57] hover:bg-[#2E8B57] hover:text-white font-black text-[9px] uppercase rounded-xl px-4 transition-all"
+                        >
+                          <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                          Confirmar
+                        </Button>
+                      )}
                       {cita.estado === 'confirmada' && (
                         <Button 
                           size="sm"
