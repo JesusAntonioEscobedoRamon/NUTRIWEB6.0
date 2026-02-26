@@ -22,14 +22,13 @@ interface Nutriologo {
   activo: boolean;
 }
 
-// Componente de carga animado
+// Componente de carga animado (sin cambios)
 function AnimatedLoadingScreen() {
   const iconRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
   const dotsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Animación del icono (nutriología)
     const iconElement = iconRef.current;
     const textElement = textRef.current;
     const dotsElement = dotsRef.current;
@@ -131,7 +130,7 @@ export function GestionNutriologos() {
     correo: '',
     numero_celular: '',
     tarifa_consulta: '',
-    password: '',           // Contraseña temporal (solo para creación)
+    password: '',
   });
 
   useEffect(() => {
@@ -156,7 +155,6 @@ export function GestionNutriologos() {
     }
   };
 
-  // Formato de teléfono: 653 333 3333
   const formatPhone = (value: string) => {
     const digits = value.replace(/\D/g, '').slice(0, 10);
     if (digits.length <= 3) return digits;
@@ -164,7 +162,6 @@ export function GestionNutriologos() {
     return `${digits.slice(0,3)} ${digits.slice(3,6)} ${digits.slice(6)}`;
   };
 
-  // Formato de moneda con comas: 1,200.00
   const formatCurrency = (value: string) => {
     const numeric = value.replace(/[^\d.]/g, '');
     const [whole, decimal = ''] = numeric.split('.');
@@ -223,7 +220,6 @@ export function GestionNutriologos() {
       return;
     }
 
-    // Validar contraseña solo en creación
     if (!editingId && (!formData.password || formData.password.length < 8)) {
       toast.error('La contraseña temporal debe tener al menos 8 caracteres');
       return;
@@ -240,7 +236,7 @@ export function GestionNutriologos() {
 
     try {
       if (editingId) {
-        // Editar
+        // Editar nutriólogo existente
         const { error } = await supabase
           .from('nutriologos')
           .update(nutriologoData)
@@ -249,26 +245,40 @@ export function GestionNutriologos() {
         if (error) throw error;
         toast.success('Nutriólogo actualizado exitosamente');
       } else {
-        // Crear
+        // Crear nuevo nutriólogo (con confirm email desactivado)
         const passwordToUse = formData.password.trim();
 
+        // NO enviamos emailRedirectTo porque confirm email está OFF
         const { data: authData, error: authError } = await supabase.auth.signUp({
           email: nutriologoData.correo,
           password: passwordToUse,
-          options: {
-            emailRedirectTo: window.location.origin + '/login',
-          },
+          // NO options.emailRedirectTo → evita 422
         });
 
         if (authError) {
-          if (authError.message.includes('already registered') || authError.message.includes('duplicate key')) {
+          if (
+            authError.status === 409 ||
+            authError.message?.toLowerCase().includes('already registered') ||
+            authError.message?.toLowerCase().includes('duplicate key')
+          ) {
             toast.error(
-              'Este correo ya está registrado. Usa uno diferente o elimina el usuario existente en Supabase (Authentication → Users).'
+              'Este correo ya está registrado en Auth.\n' +
+              'Para reutilizarlo:\n' +
+              '1. Ve a Supabase → Authentication → Users\n' +
+              '2. Busca y elimina el usuario con este correo\n' +
+              '3. Intenta crear de nuevo'
             );
+            console.log('Email duplicado en Auth:', nutriologoData.correo);
+            return;
+          } else if (authError.status === 429) {
+            toast.error(
+              'Límite de creación de cuentas alcanzado (rate limit).\n' +
+              'Espera 1-2 horas o crea usuarios manualmente en Supabase → Authentication → Users'
+            );
+            return;
           } else {
             throw authError;
           }
-          return;
         }
 
         if (!authData.user) {
@@ -294,7 +304,7 @@ export function GestionNutriologos() {
           });
 
         if (insertError) {
-          await supabase.auth.admin.deleteUser(userId);
+          console.warn('Usuario Auth creado pero insert falló. Borra manualmente el user Auth si es necesario:', userId);
           throw insertError;
         }
 
@@ -311,7 +321,8 @@ export function GestionNutriologos() {
       resetForm();
     } catch (err: any) {
       console.error('Error guardando nutriólogo:', err);
-      toast.error(err.message || 'Error al guardar el nutriólogo');
+      const msg = err.message || JSON.stringify(err) || 'Error desconocido al guardar';
+      toast.error(`Error al guardar: ${msg}`);
     }
   };
 
@@ -355,9 +366,11 @@ export function GestionNutriologos() {
 
       if (deleteProfile) throw deleteProfile;
 
+      // Nota: deleteUser requiere service_role key. Si no lo tienes configurado, hazlo manual
       if (id_auth_user) {
-        const { error: deleteAuth } = await supabase.auth.admin.deleteUser(id_auth_user);
-        if (deleteAuth) console.warn('No se pudo eliminar usuario Auth:', deleteAuth);
+        console.warn('Usuario Auth no eliminado automáticamente. Borra manualmente en Supabase Auth → Users:', id_auth_user);
+        // Si tienes supabaseAdmin:
+        // await supabaseAdmin.auth.admin.deleteUser(id_auth_user);
       }
 
       toast.success(`Nutriólogo ${nombre} ${apellido} eliminado exitosamente`);

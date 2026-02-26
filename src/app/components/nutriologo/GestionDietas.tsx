@@ -25,11 +25,89 @@ import {
   Apple,
   Edit,
   Clock,
-  ChevronDown
+  ChevronDown,
+  X
 } from 'lucide-react';
 import { toast } from 'sonner';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+
+type MealKey = 'desayuno' | 'colacion1' | 'almuerzo' | 'colacion2' | 'cena' | 'snack';
+
+type Ingrediente = {
+  id_alimento: number;
+  nombre: string;
+  descripcion?: string;
+  categoria?: string;
+  porcion_estandar?: string;
+  calorias_por_100g?: number;
+};
+
+type MealData = {
+  desc: string;
+  categoria: string;
+  porcion: string;
+  cal100g: string;
+  horario: string;
+  ingredientes: Ingrediente[];
+};
+
+type DietaData = Record<MealKey, MealData>;
+
+const DIETA_DETALLE_CATEGORIAS_VALIDAS = new Set([
+  'frutas',
+  'verduras',
+  'cereales',
+  'carnes',
+  'lacteos',
+  'otros',
+]);
+
+function normalizeCategoriaForDietaDetalle(categoria?: string | null): string | null {
+  if (!categoria) return null;
+
+  const categorias = categoria
+    .split(',')
+    .map(item => item.trim().toLowerCase())
+    .filter(Boolean)
+    .map(item => {
+      if (item === 'lácteos') return 'lacteos';
+      if (item === 'procesados') return 'otros';
+      return item;
+    })
+    .filter(item => DIETA_DETALLE_CATEGORIAS_VALIDAS.has(item));
+
+  if (categorias.length === 0) return null;
+  if (categorias.length > 1) return 'otros';
+
+  return categorias[0];
+}
+
+const mealModules: Array<{ key: MealKey; label: string; icon: any; color: string }> = [
+  { key: 'desayuno', label: 'Desayuno', icon: Coffee, color: 'text-amber-600' },
+  { key: 'colacion1', label: 'Colación 1', icon: Apple, color: 'text-green-600' },
+  { key: 'almuerzo', label: 'Almuerzo', icon: Sun, color: 'text-orange-600' },
+  { key: 'colacion2', label: 'Colación 2', icon: Apple, color: 'text-green-600' },
+  { key: 'cena', label: 'Cena', icon: Moon, color: 'text-indigo-600' },
+];
+
+const createEmptyDietaData = (): DietaData => ({
+  desayuno: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '05:30', ingredientes: [] },
+  colacion1: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '', ingredientes: [] },
+  almuerzo: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '13:00', ingredientes: [] },
+  colacion2: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '', ingredientes: [] },
+  cena: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '20:00', ingredientes: [] },
+  snack: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '', ingredientes: [] },
+});
+
+const createMealIngredientSelection = (): Record<MealKey, string> => ({
+  desayuno: '',
+  colacion1: '',
+  almuerzo: '',
+  colacion2: '',
+  cena: '',
+  snack: '',
+});
 
 // ANIMATED LOADING SCREEN
 function AnimatedLoadingScreen() {
@@ -119,14 +197,8 @@ export function GestionDietas() {
   const [editingDietaId, setEditingDietaId] = useState<number | null>(null);
   const [editingDietaData, setEditingDietaData] = useState<any>(null);
 
-  const [dietaData, setDietaData] = useState({
-    desayuno: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '05:30' },
-    colacion1: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '' },
-    almuerzo: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '13:00' },
-    colacion2: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '' },
-    cena: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '20:00' },
-    snack: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '' },
-  });
+  const [dietaData, setDietaData] = useState<DietaData>(createEmptyDietaData());
+  const [selectedIngredientByMeal, setSelectedIngredientByMeal] = useState<Record<MealKey, string>>(createMealIngredientSelection());
 
   const diasSemana = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
@@ -277,23 +349,79 @@ export function GestionDietas() {
     setFilteredAlimentos(alimentos.filter(a => a.nombre.toLowerCase().includes(query)));
   };
 
-  const handleAlimentoSelect = (meal: string, alimentoId: string) => {
+  const buildMealFromIngredientes = (ingredientes: Ingrediente[]) => {
+    const descripcion = ingredientes.map(i => i.nombre).join(' con ');
+    const categoria = [...new Set(ingredientes.map(i => i.categoria).filter(Boolean))].join(', ');
+    const porcion = ingredientes
+      .map(i => i.porcion_estandar)
+      .filter(Boolean)
+      .join(' + ');
+    const totalCalorias = ingredientes.reduce((sum, i) => sum + Number(i.calorias_por_100g || 0), 0);
+
+    return {
+      desc: descripcion,
+      categoria,
+      porcion,
+      cal100g: totalCalorias ? totalCalorias.toFixed(2).replace(/\.00$/, '') : '',
+    };
+  };
+
+  const handleAddIngredient = (meal: MealKey) => {
+    const alimentoId = selectedIngredientByMeal[meal];
+    if (!alimentoId) return;
+
     const alimento = alimentos.find(a => a.id_alimento.toString() === alimentoId);
     if (!alimento) return;
 
-    setDietaData(prev => ({
-      ...prev,
-      [meal]: {
-        ...prev[meal],
-        desc: alimento.descripcion || alimento.nombre,
-        categoria: alimento.categoria || '',
-        porcion: alimento.porcion_estandar || '',
-        cal100g: alimento.calorias_por_100g?.toString() || '',
-      }
-    }));
+    setDietaData(prev => {
+      const currentIngredientes = prev[meal].ingredientes || [];
+      const alreadySelected = currentIngredientes.some(i => i.id_alimento === alimento.id_alimento);
+      if (alreadySelected) return prev;
+
+      const updatedIngredientes = [
+        ...currentIngredientes,
+        {
+          id_alimento: alimento.id_alimento,
+          nombre: alimento.nombre,
+          descripcion: alimento.descripcion,
+          categoria: alimento.categoria,
+          porcion_estandar: alimento.porcion_estandar,
+          calorias_por_100g: Number(alimento.calorias_por_100g || 0),
+        }
+      ];
+
+      const autoData = buildMealFromIngredientes(updatedIngredientes);
+
+      return {
+        ...prev,
+        [meal]: {
+          ...prev[meal],
+          ...autoData,
+          ingredientes: updatedIngredientes,
+        }
+      };
+    });
+
+    setSelectedIngredientByMeal(prev => ({ ...prev, [meal]: '' }));
   };
 
-  const handleHoraChange = (meal: string, horario: string) => {
+  const handleRemoveIngredient = (meal: MealKey, alimentoId: number) => {
+    setDietaData(prev => {
+      const updatedIngredientes = prev[meal].ingredientes.filter(i => i.id_alimento !== alimentoId);
+      const autoData = buildMealFromIngredientes(updatedIngredientes);
+
+      return {
+        ...prev,
+        [meal]: {
+          ...prev[meal],
+          ...autoData,
+          ingredientes: updatedIngredientes,
+        }
+      };
+    });
+  };
+
+  const handleHoraChange = (meal: MealKey, horario: string) => {
     setDietaData(prev => ({
       ...prev,
       [meal]: { ...prev[meal], horario }
@@ -306,14 +434,8 @@ export function GestionDietas() {
     setSelectedPaciente(dieta.id_paciente.toString());
     setSelectedDia(1);
     
-    const emptyData = {
-      desayuno: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '05:30' },
-      colacion1: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '' },
-      almuerzo: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '13:00' },
-      colacion2: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '' },
-      cena: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '20:00' },
-      snack: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '' },
-    };
+    const emptyData = createEmptyDietaData();
+    setSelectedIngredientByMeal(createMealIngredientSelection());
 
     const detallesDia = dieta.dieta_detalle?.filter((d: any) => d.dia_semana === 1) || [];
 
@@ -335,6 +457,7 @@ export function GestionDietas() {
           porcion: det.porcion_sugerida || '',
           cal100g: det.calorias_por_100g?.toString() || '',
           horario: det.horario || emptyData[key].horario,
+          ingredientes: [],
         };
       }
     });
@@ -346,6 +469,7 @@ export function GestionDietas() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!user?.nutriologoId) return toast.error('No se encontró ID de nutriólogo');
     if (!selectedPaciente) return toast.error('Selecciona un paciente');
     const tieneComidas = Object.values(dietaData).some(item => item.desc.trim());
     if (!tieneComidas) return toast.error('Selecciona o escribe al menos una comida');
@@ -358,13 +482,15 @@ export function GestionDietas() {
       if (isEditing && editingDietaData) {
         dietaId = editingDietaData.id_dieta;
       } else {
-        const { data: existente } = await supabase
+        const { data: existente, error: existenteError } = await supabase
           .from('dietas')
           .select('id_dieta')
           .eq('id_nutriologo', user?.nutriologoId)
           .eq('id_paciente', parseInt(selectedPaciente))
           .eq('activa', true)
           .maybeSingle();
+
+        if (existenteError) throw existenteError;
 
         if (existente) {
           dietaId = existente.id_dieta;
@@ -386,11 +512,13 @@ export function GestionDietas() {
         }
       }
 
-      await supabase
+      const { error: deleteDetalleError } = await supabase
         .from('dieta_detalle')
         .delete()
         .eq('id_dieta', dietaId)
         .eq('dia_semana', selectedDia);
+
+      if (deleteDetalleError) throw deleteDetalleError;
 
       const comidasConfig = [
         { tipo: 'Desayuno', key: 'desayuno' },
@@ -398,8 +526,15 @@ export function GestionDietas() {
         { tipo: 'Almuerzo', key: 'almuerzo' },
         { tipo: 'Colación 2', key: 'colacion2' },
         { tipo: 'Cena', key: 'cena' },
-        { tipo: 'Snack', key: 'snack' },
       ];
+
+      const horarioPorDefecto: Record<string, string> = {
+        desayuno: '05:30',
+        colacion1: '10:30',
+        almuerzo: '13:00',
+        colacion2: '17:00',
+        cena: '20:00',
+      };
 
       const detalles = comidasConfig
         .filter(c => dietaData[c.key as keyof typeof dietaData].desc.trim())
@@ -408,11 +543,11 @@ export function GestionDietas() {
           dia_semana: selectedDia,
           tipo_comida: c.tipo,
           descripcion: dietaData[c.key as keyof typeof dietaData].desc.trim(),
-          categoria: dietaData[c.key as keyof typeof dietaData].categoria || null,
+          categoria: normalizeCategoriaForDietaDetalle(dietaData[c.key as keyof typeof dietaData].categoria),
           porcion_sugerida: dietaData[c.key as keyof typeof dietaData].porcion || null,
           calorias_por_100g: parseFloat(dietaData[c.key as keyof typeof dietaData].cal100g) || null,
-          horario: c.tipo.includes('Colación') ? null : dietaData[c.key as keyof typeof dietaData].horario || null,
-          orden: index,
+          horario: dietaData[c.key as keyof typeof dietaData].horario || horarioPorDefecto[c.key] || null,
+          orden: index + 1,
         }));
 
       if (detalles.length > 0) {
@@ -423,14 +558,8 @@ export function GestionDietas() {
       toast.success(isEditing ? '¡Plan actualizado!' : '¡Plan asignado!');
       setIsDialogOpen(false);
 
-      setDietaData({
-        desayuno: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '05:30' },
-        colacion1: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '' },
-        almuerzo: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '13:00' },
-        colacion2: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '' },
-        cena: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '20:00' },
-        snack: { desc: '', categoria: '', porcion: '', cal100g: '', horario: '' },
-      });
+      setDietaData(createEmptyDietaData());
+      setSelectedIngredientByMeal(createMealIngredientSelection());
 
       setSelectedPaciente('');
       setSelectedDia(1);
@@ -442,7 +571,8 @@ export function GestionDietas() {
       await fetchData();
     } catch (err: any) {
       console.error('Error al guardar:', err);
-      toast.error('Error al guardar: ' + (err.message || 'Revisa consola'));
+      const detalle = [err?.message, err?.details, err?.hint, err?.code].filter(Boolean).join(' | ');
+      toast.error('Error al guardar: ' + (detalle || 'Revisa consola'));
     } finally {
       setLoading(false);
     }
@@ -648,51 +778,76 @@ export function GestionDietas() {
                         Selecciona las comidas del día
                       </h3>
                       
-                      {[
-                        { key: 'desayuno', label: 'Desayuno', icon: Coffee, color: 'text-amber-600' },
-                        { key: 'colacion1', label: 'Colación 1', icon: Apple, color: 'text-green-600' },
-                        { key: 'almuerzo', label: 'Almuerzo', icon: Sun, color: 'text-orange-600' },
-                        { key: 'colacion2', label: 'Colación 2', icon: Apple, color: 'text-green-600' },
-                        { key: 'cena', label: 'Cena', icon: Moon, color: 'text-indigo-600' },
-                      ].map((meal) => (
+                      {mealModules.map((meal) => (
                         <div key={meal.key} className="space-y-4 p-5 border-2 border[#D1E8D5] rounded-3xl bg-white shadow-sm">
                           <div className="flex items-center gap-2">
                             <meal.icon size={18} className={meal.color} />
                             <Label className="text-sm font-black uppercase text[#1A3026]">{meal.label}</Label>
                           </div>
 
-                          <Select 
-                            onValueChange={(val) => handleAlimentoSelect(meal.key, val)}
-                          >
-                            <SelectTrigger className="border-2 border[#D1E8D5] rounded-xl h-12">
-                              <SelectValue placeholder="Selecciona un alimento" />
-                            </SelectTrigger>
-                            <SelectContent className="rounded-xl border-2 border[#D1E8D5] custom-dialog-scroll max-h-60">
-                              {filteredAlimentos.length === 0 ? (
-                                <div className="p-4 text-center text-gray-500 text-xs">
-                                  No hay alimentos disponibles
-                                </div>
-                              ) : (
-                                filteredAlimentos.map((alimento) => (
-                                  <SelectItem 
-                                    key={alimento.id_alimento} 
-                                    value={alimento.id_alimento.toString()} 
-                                    className="font-bold text-xs py-3"
+                          <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2">
+                            <Select
+                              value={selectedIngredientByMeal[meal.key]}
+                              onValueChange={(val) => setSelectedIngredientByMeal(prev => ({ ...prev, [meal.key]: val }))}
+                            >
+                              <SelectTrigger className="border-2 border[#D1E8D5] rounded-xl h-12">
+                                <SelectValue placeholder="Selecciona un ingrediente" />
+                              </SelectTrigger>
+                              <SelectContent className="rounded-xl border-2 border[#D1E8D5] custom-dialog-scroll max-h-60">
+                                {filteredAlimentos.length === 0 ? (
+                                  <div className="p-4 text-center text-gray-500 text-xs">
+                                    No hay alimentos disponibles
+                                  </div>
+                                ) : (
+                                  filteredAlimentos.map((alimento) => (
+                                    <SelectItem
+                                      key={alimento.id_alimento}
+                                      value={alimento.id_alimento.toString()}
+                                      className="font-bold text-xs py-3"
+                                    >
+                                      {alimento.nombre} ({alimento.calorias_por_100g} kcal/100g)
+                                    </SelectItem>
+                                  ))
+                                )}
+                              </SelectContent>
+                            </Select>
+
+                            <Button
+                              type="button"
+                              onClick={() => handleAddIngredient(meal.key)}
+                              className="bg[#2E8B57] hover:bg[#1A3026] text-white font-black text-[10px] uppercase rounded-xl h-12 px-5"
+                            >
+                              Agregar
+                            </Button>
+                          </div>
+
+                          {dietaData[meal.key].ingredientes.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                              {dietaData[meal.key].ingredientes.map((ingrediente) => (
+                                <div
+                                  key={ingrediente.id_alimento}
+                                  className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#F0FFF4] border border[#D1E8D5] text-xs font-bold text-[#1A3026]"
+                                >
+                                  <span>{ingrediente.nombre}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveIngredient(meal.key, ingrediente.id_alimento)}
+                                    className="text-[#2E8B57] hover:text-[#1A3026]"
                                   >
-                                    {alimento.nombre} ({alimento.calorias_por_100g} kcal/100g)
-                                  </SelectItem>
-                                ))
-                              )}
-                            </SelectContent>
-                          </Select>
+                                    <X size={12} />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
 
                           <Textarea
-                            placeholder="Descripción o preparación..."
+                            placeholder="Descripción de la comida (ej. Huevo con apio y ajo)..."
                             className="border-2 border[#D1E8D5] rounded-xl min-h-[90px] text-sm p-4 bg[#F8FFF9]/30"
-                            value={dietaData[meal.key as keyof typeof dietaData].desc}
+                            value={dietaData[meal.key].desc}
                             onChange={(e) => setDietaData({
                               ...dietaData,
-                              [meal.key]: { ...dietaData[meal.key as keyof typeof dietaData], desc: e.target.value }
+                              [meal.key]: { ...dietaData[meal.key], desc: e.target.value }
                             })}
                             required
                           />
@@ -702,7 +857,7 @@ export function GestionDietas() {
                               <Label className="text-[10px] font-black uppercase text-gray-400 tracking-wider">Horario</Label>
                               <Input 
                                 type="time" 
-                                value={dietaData[meal.key as keyof typeof dietaData].horario || ''} 
+                                value={dietaData[meal.key].horario || ''} 
                                 onChange={(e) => handleHoraChange(meal.key, e.target.value)} 
                                 className="border-2 border[#D1E8D5] rounded-xl h-12"
                               />
@@ -712,15 +867,15 @@ export function GestionDietas() {
                           <div className="grid grid-cols-3 gap-2 text-xs text-gray-500 uppercase font-bold text-center">
                             <p className="flex items-center justify-center gap-1">
                               <Tag size={12} className="text[#2E8B57]" /> 
-                              {dietaData[meal.key as keyof typeof dietaData].categoria || '-'}
+                              {dietaData[meal.key].categoria || '-'}
                             </p>
                             <p className="flex items-center justify-center gap-1">
                               <Scale size={12} className="text[#2E8B57]" /> 
-                              {dietaData[meal.key as keyof typeof dietaData].porcion || '-'}
+                              {dietaData[meal.key].porcion || '-'}
                             </p>
                             <p className="flex items-center justify-center gap-1">
                               <Flame size={12} className="text[#2E8B57]" /> 
-                              {dietaData[meal.key as keyof typeof dietaData].cal100g ? `${dietaData[meal.key as keyof typeof dietaData].cal100g} kcal` : '-'}
+                              {dietaData[meal.key].cal100g ? `${dietaData[meal.key].cal100g} kcal` : '-'}
                             </p>
                           </div>
                         </div>
