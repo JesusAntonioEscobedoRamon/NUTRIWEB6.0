@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { UserPlus, Edit, Trash2, KeyRound, AlertTriangle, BadgeDollarSign, Mail, Phone, UserCircle, RefreshCw, Stethoscope } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/app/context/supabaseClient';
+import { ImageWithFallback } from '@/app/components/figma/ImageWithFallback';
 
 interface Nutriologo {
   id_nutriologo: number;
@@ -20,6 +21,7 @@ interface Nutriologo {
   tarifa_consulta: number;
   fecha_registro: string;
   activo: boolean;
+  foto_perfil?: string;
 }
 
 // Componente de carga animado (sin cambios)
@@ -236,7 +238,7 @@ export function GestionNutriologos() {
 
     try {
       if (editingId) {
-        // Editar nutriólogo existente
+        // Editar
         const { error } = await supabase
           .from('nutriologos')
           .update(nutriologoData)
@@ -245,14 +247,15 @@ export function GestionNutriologos() {
         if (error) throw error;
         toast.success('Nutriólogo actualizado exitosamente');
       } else {
-        // Crear nuevo nutriólogo (con confirm email desactivado)
+        // Crear (con confirm email activado → SÍ enviamos redirect)
         const passwordToUse = formData.password.trim();
 
-        // NO enviamos emailRedirectTo porque confirm email está OFF
         const { data: authData, error: authError } = await supabase.auth.signUp({
           email: nutriologoData.correo,
           password: passwordToUse,
-          // NO options.emailRedirectTo → evita 422
+          options: {
+            emailRedirectTo: window.location.origin + '/login',
+          },
         });
 
         if (authError) {
@@ -262,13 +265,13 @@ export function GestionNutriologos() {
             authError.message?.toLowerCase().includes('duplicate key')
           ) {
             toast.error(
-              'Este correo ya está registrado en Auth.\n' +
+              'Este correo ya está registrado en el sistema de autenticación.\n' +
               'Para reutilizarlo:\n' +
               '1. Ve a Supabase → Authentication → Users\n' +
               '2. Busca y elimina el usuario con este correo\n' +
               '3. Intenta crear de nuevo'
             );
-            console.log('Email duplicado en Auth:', nutriologoData.correo);
+            console.log('Email duplicado detectado:', nutriologoData.correo);
             return;
           } else if (authError.status === 429) {
             toast.error(
@@ -311,7 +314,8 @@ export function GestionNutriologos() {
         toast.success(
           `Nutriólogo creado exitosamente.\n` +
           `Contraseña temporal: ${passwordToUse}\n` +
-          `(Compártela de forma segura con el nutriólogo)`
+          `Se envió email de confirmación a ${nutriologoData.correo}\n` +
+          `(El nutriólogo debe confirmar antes de poder iniciar sesión)`
         );
       }
 
@@ -366,11 +370,8 @@ export function GestionNutriologos() {
 
       if (deleteProfile) throw deleteProfile;
 
-      // Nota: deleteUser requiere service_role key. Si no lo tienes configurado, hazlo manual
       if (id_auth_user) {
         console.warn('Usuario Auth no eliminado automáticamente. Borra manualmente en Supabase Auth → Users:', id_auth_user);
-        // Si tienes supabaseAdmin:
-        // await supabaseAdmin.auth.admin.deleteUser(id_auth_user);
       }
 
       toast.success(`Nutriólogo ${nombre} ${apellido} eliminado exitosamente`);
@@ -491,7 +492,7 @@ export function GestionNutriologos() {
         </Dialog>
       </div>
 
-      {/* Tabla Principal */}
+      {/* Tabla Principal - Ahora con foto de perfil */}
       <Card className="rounded-[2.5rem] border-2 border-[#D1E8D5] overflow-hidden bg-white shadow-sm">
         <CardHeader className="bg-[#F8FFF9] border-b border-[#D1E8D5] p-8">
           <CardTitle className="text-sm font-[900] text-[#1A3026] uppercase tracking-[2px] flex items-center gap-2">
@@ -505,6 +506,7 @@ export function GestionNutriologos() {
             <Table>
               <TableHeader>
                 <TableRow className="border-b border-[#F0FFF4] hover:bg-transparent">
+                  <TableHead className="py-6 px-8 text-[10px] font-[900] uppercase text-gray-400 tracking-widest">Foto</TableHead>
                   <TableHead className="py-6 px-8 text-[10px] font-[900] uppercase text-gray-400 tracking-widest">Profesional</TableHead>
                   <TableHead className="text-[10px] font-[900] uppercase text-gray-400 tracking-widest">Contacto</TableHead>
                   <TableHead className="text-[10px] font-[900] uppercase text-gray-400 tracking-widest text-center">Tarifa</TableHead>
@@ -515,16 +517,23 @@ export function GestionNutriologos() {
                 {nutriologos.map((nutriologo) => (
                   <TableRow key={nutriologo.id_nutriologo} className="border-b border-[#F8FFF9] hover:bg-[#F8FFF9]/50 transition-colors group">
                     <TableCell className="py-6 px-8">
-                      <div className="flex items-center gap-4">
-                        <div className="h-12 w-12 bg-[#F8FFF9] border-2 border-[#D1E8D5] rounded-2xl flex items-center justify-center font-[900] text-[#2E8B57] text-sm group-hover:bg-[#2E8B57] group-hover:text-white transition-all duration-300">
-                          {nutriologo.nombre[0]}{nutriologo.apellido[0]}
-                        </div>
-                        <div>
-                          <p className="font-[900] text-[#1A3026] uppercase text-[12px] tracking-tight">{nutriologo.nombre} {nutriologo.apellido}</p>
-                          <p className="font-mono text-[10px] text-gray-400 font-bold">
-                            ID: {nutriologo.id_auth_user ? nutriologo.id_auth_user.slice(0,8)+'...' : 'Sin cuenta'}
-                          </p>
-                        </div>
+                      <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-[#D1E8D5] flex items-center justify-center bg-[#F8FFF9]">
+                        <ImageWithFallback
+                          src={nutriologo.foto_perfil || 'nutriologo_default.png'}
+                          alt={`${nutriologo.nombre} ${nutriologo.apellido}`}
+                          className="w-full h-full object-cover"
+                          fallbackSrc="nutriologo_default.png"
+                        />
+                      </div>
+                    </TableCell>
+                    <TableCell className="py-6 px-8">
+                      <div className="flex flex-col">
+                        <p className="font-[900] text-[#1A3026] uppercase text-[12px] tracking-tight">
+                          {nutriologo.nombre} {nutriologo.apellido}
+                        </p>
+                        <p className="font-mono text-[10px] text-gray-400 font-bold">
+                          ID: {nutriologo.id_auth_user ? nutriologo.id_auth_user.slice(0,8)+'...' : 'Sin cuenta'}
+                        </p>
                       </div>
                     </TableCell>
                     <TableCell>

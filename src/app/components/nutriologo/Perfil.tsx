@@ -147,6 +147,14 @@ export function Perfil() {
     fotoPerfil: user?.fotoPerfil || null
   });
 
+  useEffect(() => {
+    (window as Window & { __hasPendingChanges?: boolean }).__hasPendingChanges = isEditing && hasChanges;
+
+    return () => {
+      (window as Window & { __hasPendingChanges?: boolean }).__hasPendingChanges = false;
+    };
+  }, [isEditing, hasChanges]);
+
   // Bloqueo de navegación si hay cambios sin guardar
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {

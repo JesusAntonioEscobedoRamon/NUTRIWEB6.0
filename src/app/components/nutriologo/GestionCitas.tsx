@@ -10,18 +10,18 @@ import { useAuth } from '@/app/context/useAuth';
 import { supabase } from '@/app/context/supabaseClient';
 import { Calendar, Clock, Plus, CheckCircle, History, LayoutDashboard, CalendarClock } from 'lucide-react';
 import { toast } from 'sonner';
+import { Avatar, AvatarFallback, AvatarImage } from '@/app/components/ui/avatar';
+import { DateTime } from 'luxon'; // ← Nueva importación
 
 const SONORA_TIMEZONE = 'America/Hermosillo';
-const SONORA_OFFSET_MS = 7 * 60 * 60 * 1000; // UTC-7 en milisegundos
+const STORAGE_PUBLIC_URL = 'https://hthnkzwjotwqhvjgqhfv.supabase.co/storage/v1/object/public/perfiles/';
 
-// Componente de carga animado
 function AnimatedLoadingScreen() {
   const iconRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
   const dotsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Animación del icono (citas)
     const iconElement = iconRef.current;
     const textElement = textRef.current;
     const dotsElement = dotsRef.current;
@@ -119,9 +119,10 @@ export function GestionCitas() {
   const [hora, setHora] = useState('');
   const [citas, setCitas] = useState<any[]>([]);
   const [pacientes, setPacientes] = useState<any[]>([]);
-  const [filteredPacientes, setFilteredPacientes] = useState<any[]>([]); // Para búsqueda
-  const [searchQuery, setSearchQuery] = useState(''); // Texto de búsqueda
+  const [filteredPacientes, setFilteredPacientes] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]); // Hoy por defecto
 
   useEffect(() => {
     if (!user?.nutriologoId) {
@@ -138,7 +139,7 @@ export function GestionCitas() {
       try {
         const nutriologoId = Number(user.nutriologoId);
 
-        // 1. Pacientes asignados
+        // 1. Pacientes asignados + foto_perfil
         const { data: relaciones, error: errRel } = await supabase
           .from('paciente_nutriologo')
           .select('id_paciente')
@@ -152,19 +153,27 @@ export function GestionCitas() {
         if (pacienteIds.length === 0) {
           setPacientes([]);
           setFilteredPacientes([]);
-          // Cargar citas aunque no haya pacientes
         } else {
           const { data: pacientesData, error: errPac } = await supabase
             .from('pacientes')
-            .select('id_paciente, nombre, apellido, correo')
+            .select('id_paciente, nombre, apellido, correo, foto_perfil')
             .in('id_paciente', pacienteIds);
 
           if (errPac) throw errPac;
-          setPacientes(pacientesData || []);
-          setFilteredPacientes(pacientesData || []);
+
+          const pacientesConFoto = pacientesData?.map(p => {
+            let fotoUrl = p.foto_perfil;
+            if (fotoUrl && !fotoUrl.startsWith('http')) {
+              fotoUrl = `${STORAGE_PUBLIC_URL}${fotoUrl}`;
+            }
+            return { ...p, foto_perfil: fotoUrl || null };
+          }) || [];
+
+          setPacientes(pacientesConFoto);
+          setFilteredPacientes(pacientesConFoto);
         }
 
-        // 2. Citas
+        // 2. Citas con foto_perfil
         const { data: citasData, error: errCitas } = await supabase
           .from('citas')
           .select(`
@@ -172,7 +181,7 @@ export function GestionCitas() {
             fecha_hora,
             estado,
             id_paciente,
-            pacientes!inner (nombre, apellido),
+            pacientes!inner (nombre, apellido, foto_perfil),
             pagos!left (monto, estado)
           `)
           .eq('id_nutriologo', nutriologoId)
@@ -181,19 +190,21 @@ export function GestionCitas() {
         if (errCitas) throw errCitas;
 
         const citasFormateadas = citasData?.map(c => {
-          const utcDate = new Date(c.fecha_hora);
-          const sonoraDate = new Date(utcDate.getTime() - SONORA_OFFSET_MS);
+          const sonoraDate = DateTime.fromISO(c.fecha_hora, { zone: 'utc' }).setZone(SONORA_TIMEZONE);
+
+          let fotoUrl = c.pacientes?.foto_perfil;
+          if (fotoUrl && !fotoUrl.startsWith('http')) {
+            fotoUrl = `${STORAGE_PUBLIC_URL}${fotoUrl}`;
+          }
 
           return {
             id: c.id_cita,
-            fecha: new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium' }).format(sonoraDate),
-            hora: new Intl.DateTimeFormat('es-MX', { 
-              hour: '2-digit', 
-              minute: '2-digit', 
-              hour12: true 
-            }).format(sonoraDate),
+            fecha: sonoraDate.toLocaleString(DateTime.DATE_MED),
+            hora: sonoraDate.toLocaleString(DateTime.TIME_SIMPLE),
+            fecha_hora: c.fecha_hora, // Para filtrar
             estado: c.estado,
             pacienteNombre: `${c.pacientes?.nombre || ''} ${c.pacientes?.apellido || ''}`,
+            foto_perfil: fotoUrl || null,
             pagada: c.pagos?.some(p => p.estado === 'completado') || false,
             monto: c.pagos?.[0]?.monto || 800
           };
@@ -211,8 +222,27 @@ export function GestionCitas() {
     fetchData();
   }, [user?.nutriologoId]);
 
-  const citasPendientes = citas.filter(c => c.estado === 'pendiente' || c.estado === 'confirmada');
-  const citasCompletadas = citas.filter(c => c.estado === 'completada');
+  // Filtrar citas por fecha seleccionada (en zona horaria Sonora)
+  const filterCitasByDate = (dateStr: string) => {
+    if (!dateStr) return citas;
+
+    // Crear rango del día en Sonora
+    const selectedDay = DateTime.fromISO(dateStr, { zone: SONORA_TIMEZONE }).startOf('day');
+    const endOfDay = selectedDay.endOf('day');
+
+    // Convertir a UTC para comparar con fecha_hora guardada
+    const startUTC = selectedDay.toUTC().toISO();
+    const endUTC = endOfDay.toUTC().toISO();
+
+    return citas.filter(c => {
+      const citaDate = new Date(c.fecha_hora);
+      return citaDate >= new Date(startUTC) && citaDate <= new Date(endUTC);
+    });
+  };
+
+  const citasFiltradas = filterCitasByDate(selectedDate);
+  const citasPendientes = citasFiltradas.filter(c => c.estado === 'pendiente' || c.estado === 'confirmada');
+  const citasCompletadas = citasFiltradas.filter(c => c.estado === 'completada');
 
   // Búsqueda en tiempo real
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -260,19 +290,15 @@ export function GestionCitas() {
     try {
       const [year, month, day] = fecha.split('-').map(Number);
       const [hours, minutes] = hora.split(':').map(Number);
-      const localSonora = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
+      const localSonora = DateTime.local(year, month, day, hours, minutes, { zone: SONORA_TIMEZONE });
 
-      const now = new Date();
+      const now = DateTime.local({ zone: SONORA_TIMEZONE });
       if (localSonora < now) {
         toast.error('No se puede agendar citas en fechas pasadas.');
         return;
       }
 
-      const utcDate = new Date(localSonora.getTime() + SONORA_OFFSET_MS);
-      const fechaHoraUTC = utcDate.toISOString();
-
-      console.log('[DEBUG] Hora elegida Sonora:', localSonora.toLocaleString('es-MX', { timeZone: SONORA_TIMEZONE }));
-      console.log('[DEBUG] Guardando como UTC:', fechaHoraUTC);
+      const fechaHoraUTC = localSonora.toUTC().toISO();
 
       const nutriologoId = Number(user.nutriologoId);
 
@@ -305,7 +331,7 @@ export function GestionCitas() {
           fecha_hora,
           estado,
           id_paciente,
-          pacientes!inner (nombre, apellido),
+          pacientes!inner (nombre, apellido, foto_perfil),
           pagos!left (monto, estado)
         `)
         .eq('id_nutriologo', nutriologoId)
@@ -313,19 +339,21 @@ export function GestionCitas() {
 
       if (!errRefresh) {
         const formateadas = nuevasCitas?.map(c => {
-          const utcDate = new Date(c.fecha_hora);
-          const sonoraDate = new Date(utcDate.getTime() - SONORA_OFFSET_MS);
+          const sonoraDate = DateTime.fromISO(c.fecha_hora, { zone: 'utc' }).setZone(SONORA_TIMEZONE);
+
+          let fotoUrl = c.pacientes?.foto_perfil;
+          if (fotoUrl && !fotoUrl.startsWith('http')) {
+            fotoUrl = `${STORAGE_PUBLIC_URL}${fotoUrl}`;
+          }
 
           return {
             id: c.id_cita,
-            fecha: new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium' }).format(sonoraDate),
-            hora: new Intl.DateTimeFormat('es-MX', { 
-              hour: '2-digit', 
-              minute: '2-digit', 
-              hour12: true 
-            }).format(sonoraDate),
+            fecha: sonoraDate.toLocaleString(DateTime.DATE_MED),
+            hora: sonoraDate.toLocaleString(DateTime.TIME_SIMPLE),
+            fecha_hora: c.fecha_hora,
             estado: c.estado,
             pacienteNombre: `${c.pacientes?.nombre || ''} ${c.pacientes?.apellido || ''}`,
+            foto_perfil: fotoUrl || null,
             pagada: c.pagos?.some(p => p.estado === 'completado') || false,
             monto: c.pagos?.[0]?.monto || 800
           };
@@ -338,7 +366,13 @@ export function GestionCitas() {
     }
   };
 
-  const marcarComoConfirmada = async (citaId: number) => {
+  const confirmarCita = async (citaId: number, pacienteNombre: string, fecha: string, hora: string) => {
+    const confirmed = window.confirm(
+      `¿Estás seguro de confirmar la cita con ${pacienteNombre} el ${fecha} a las ${hora}?`
+    );
+
+    if (!confirmed) return;
+
     try {
       const { error } = await supabase
         .from('citas')
@@ -355,7 +389,13 @@ export function GestionCitas() {
     }
   };
 
-  const marcarComoCompletada = async (citaId: number) => {
+  const finalizarCita = async (citaId: number, pacienteNombre: string, fecha: string, hora: string) => {
+    const confirmed = window.confirm(
+      `¿Estás seguro de finalizar la cita con ${pacienteNombre} del ${fecha} a las ${hora}?`
+    );
+
+    if (!confirmed) return;
+
     try {
       const { error } = await supabase
         .from('citas')
@@ -367,7 +407,7 @@ export function GestionCitas() {
       toast.success('Cita marcada como completada');
       setCitas(prev => prev.map(c => c.id === citaId ? { ...c, estado: 'completada' } : c));
     } catch (err: any) {
-      toast.error('Error al actualizar la cita');
+      toast.error('Error al finalizar la cita');
       console.error(err);
     }
   };
@@ -433,9 +473,9 @@ export function GestionCitas() {
                     value={searchQuery}
                     onChange={(e) => {
                       setSearchQuery(e.target.value);
-                      handleSearch(e); // Filtra en tiempo real
+                      handleSearch(e);
                     }}
-                    onKeyDown={handleSearchKeyDown} // Enter para autoseleccionar
+                    onKeyDown={handleSearchKeyDown}
                     className="border-2 border-[#D1E8D5] rounded-xl h-12 font-bold focus:ring-[#2E8B57]"
                   />
                 </div>
@@ -520,6 +560,22 @@ export function GestionCitas() {
           </Dialog>
         </div>
 
+        {/* Selector de fecha - Contenedor más compacto */}
+        <div className="bg-white p-4 rounded-[1.5rem] border-2 border-[#D1E8D5] shadow-sm mb-8 max-w-sm">
+          <Label className="text-sm font-black uppercase text-[#1A3026] tracking-[2px] mb-2 block">
+            Ver citas del día
+          </Label>
+          <div className="flex items-center gap-3">
+            <Input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="border-2 border-[#D1E8D5] rounded-xl h-10 text-sm font-bold focus:ring-[#2E8B57] flex-1"
+            />
+            <Calendar className="text-[#2E8B57]" size={20} />
+          </div>
+        </div>
+
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {[
@@ -558,9 +614,15 @@ export function GestionCitas() {
                 citasPendientes.map((cita) => (
                   <div key={cita.id} className="flex flex-col md:flex-row md:items-center justify-between p-6 border-2 border-[#F0FFF4] rounded-[2rem] hover:border-[#2E8B57] transition-all bg-white group">
                     <div className="flex items-center gap-5">
-                      <div className="h-14 w-14 bg-[#F0FFF4] rounded-2xl flex items-center justify-center border border-[#D1E8D5] group-hover:bg-[#2E8B57] transition-colors">
-                        <Calendar className="h-6 w-6 text-[#2E8B57] group-hover:text-white" />
-                      </div>
+                      <Avatar className="h-14 w-14 border-2 border-[#D1E8D5] group-hover:border-[#2E8B57] transition-colors">
+                        <AvatarImage 
+                          src={cita.foto_perfil || ''} 
+                          alt={cita.pacienteNombre} 
+                        />
+                        <AvatarFallback className="bg-[#F0FFF4] text-[#2E8B57] font-black">
+                          {cita.pacienteNombre.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase() || '?'}
+                        </AvatarFallback>
+                      </Avatar>
                       <div>
                         <p className="font-black text-[#1A3026] uppercase text-sm tracking-tight">
                           {cita.pacienteNombre}
@@ -586,7 +648,7 @@ export function GestionCitas() {
                       {cita.estado === 'pendiente' && (
                         <Button 
                           size="sm"
-                          onClick={() => marcarComoConfirmada(cita.id)}
+                          onClick={() => confirmarCita(cita.id, cita.pacienteNombre, cita.fecha, cita.hora)}
                           className="bg-white border-2 border-[#2E8B57] text-[#2E8B57] hover:bg-[#2E8B57] hover:text-white font-black text-[9px] uppercase rounded-xl px-4 transition-all"
                         >
                           <CheckCircle className="h-3.5 w-3.5 mr-1" />
@@ -596,7 +658,7 @@ export function GestionCitas() {
                       {cita.estado === 'confirmada' && (
                         <Button 
                           size="sm"
-                          onClick={() => marcarComoCompletada(cita.id)}
+                          onClick={() => finalizarCita(cita.id, cita.pacienteNombre, cita.fecha, cita.hora)}
                           className="bg-white border-2 border-[#2E8B57] text-[#2E8B57] hover:bg-[#2E8B57] hover:text-white font-black text-[9px] uppercase rounded-xl px-4 transition-all"
                         >
                           <CheckCircle className="h-3.5 w-3.5 mr-1" />
@@ -624,9 +686,15 @@ export function GestionCitas() {
               {citasCompletadas.map((cita) => (
                 <div key={cita.id} className="flex items-center justify-between p-5 bg-[#F8FFF9] border border-[#D1E8D5] rounded-2xl">
                   <div className="flex items-center gap-4">
-                    <div className="h-10 w-10 bg-white rounded-xl flex items-center justify-center border border-[#D1E8D5]">
-                      <CheckCircle size={18} className="text-[#2E8B57]" />
-                    </div>
+                    <Avatar className="h-10 w-10 border-2 border-[#D1E8D5]">
+                      <AvatarImage 
+                        src={cita.foto_perfil || ''} 
+                        alt={cita.pacienteNombre} 
+                      />
+                      <AvatarFallback className="bg-[#F0FFF4] text-[#2E8B57] font-black">
+                        {cita.pacienteNombre.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase() || '?'}
+                      </AvatarFallback>
+                    </Avatar>
                     <div>
                       <p className="font-black text-[#1A3026] uppercase text-xs">
                         {cita.pacienteNombre}

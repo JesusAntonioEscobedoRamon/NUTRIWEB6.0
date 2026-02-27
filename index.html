@@ -1,10 +1,36 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title> Nutri U</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2334a853'%3E%3Cpath d='M12,2C9,7,4,9,4,14c0,4,4,6,8,6s8-2,8-6C20,9,15,7,12,2z'/%3E%3C/svg%3E" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  
+  <!-- Título y descripción (importante para PWA) -->
+  <title>Nutri U - Nutrición Personalizada</title>
+  <meta name="description" content="Seguimiento nutricional, citas con nutriólogos y planes personalizados" />
+
+  <!-- Favicon básico -->
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" href="/favicon.png" />
+
+  <!-- iOS / Apple Touch Icon (muy importante para que se vea bien en iPhone/iPad) -->
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="NutriU" />
+
+  <!-- Android / PWA manifest -->
+  <link rel="manifest" href="/manifest.webmanifest" />
+
+  <!-- Theme color (barra de navegación y splash) -->
+  <meta name="theme-color" content="#2E8B57" />
+
+  <!-- Optimizaciones móviles -->
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="format-detection" content="telephone=no" />
+
+  <!-- Preconnect a Supabase (opcional, mejora velocidad) -->
+  <link rel="preconnect" href="https://hthnkzwjotwqhvjgqhfv.supabase.co" crossorigin />
+
 </head>
 <body>
   <div id="root"></div>

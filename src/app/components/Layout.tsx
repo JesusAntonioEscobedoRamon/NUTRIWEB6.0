@@ -1,6 +1,16 @@
 import { ReactNode, useState } from 'react';
 import { useAuth } from '@/app/context/useAuth';
 import { Button } from '@/app/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/app/components/ui/alert-dialog';
 import { 
   Home,
   Users, 
@@ -12,9 +22,16 @@ import {
   User as UserIcon,
   Leaf,
   Menu,
-  X
+  X,
+  AlertTriangle
 } from 'lucide-react';
 import {ImageWithFallback} from '@/app/components/figma/ImageWithFallback';
+
+declare global {
+  interface Window {
+    __hasPendingChanges?: boolean;
+  }
+}
 
 interface LayoutProps {
   children: ReactNode;
@@ -25,6 +42,33 @@ interface LayoutProps {
 export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
   const { user, logout } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [pendingDialogOpen, setPendingDialogOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<null | (() => void | Promise<void>)>(null);
+
+  const runOrAskPendingChanges = (action: () => void | Promise<void>) => {
+    if (!window.__hasPendingChanges) {
+      void action();
+      return;
+    }
+
+    setPendingAction(() => action);
+    setPendingDialogOpen(true);
+  };
+
+  const handleConfirmPendingChanges = async () => {
+    const action = pendingAction;
+    setPendingDialogOpen(false);
+    setPendingAction(null);
+
+    if (action) {
+      await action();
+    }
+  };
+
+  const handleCancelPendingChanges = () => {
+    setPendingDialogOpen(false);
+    setPendingAction(null);
+  };
 
   // Depuración
   console.log('Layout - User completo:', user);
@@ -49,8 +93,20 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
   const menuItems = user?.rol === 'admin' ? adminMenuItems : nutriologoMenuItems;
 
   const handleTabClick = (id: string) => {
-    onTabChange(id);
-    setIsMobileMenuOpen(false);
+    if (id === activeTab) {
+      return;
+    }
+
+    runOrAskPendingChanges(() => {
+      onTabChange(id);
+      setIsMobileMenuOpen(false);
+    });
+  };
+
+  const handleLogout = async () => {
+    runOrAskPendingChanges(async () => {
+      await logout();
+    });
   };
 
   // Usar fotoPerfil (camelCase) que ya viene completa desde el contexto
@@ -145,7 +201,7 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
                 <p className="text-[9px] font-bold text-gray-400 truncate">{user?.email}</p>
               </div>
             </div>
-            <Button onClick={logout} variant="outline" className="w-full bg-white border-2 border-red-50 text-red-400 hover:bg-red-50 hover:text-red-600 font-black text-[10px] uppercase h-12 rounded-xl">
+            <Button onClick={handleLogout} variant="outline" className="w-full bg-white border-2 border-red-50 text-red-400 hover:bg-red-50 hover:text-red-600 font-black text-[10px] uppercase h-12 rounded-xl">
               <LogOut className="h-4 w-4 mr-2" /> Cerrar Sesión
             </Button>
           </div>
@@ -186,6 +242,38 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
           </div>
         </div>
       </main>
+
+      <AlertDialog open={pendingDialogOpen} onOpenChange={setPendingDialogOpen}>
+        <AlertDialogContent className="rounded-3xl border-2 border-[#D1E8D5]">
+          <AlertDialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-[#FDF4E8] text-[#D97706] flex items-center justify-center">
+                <AlertTriangle size={20} />
+              </div>
+              <AlertDialogTitle className="text-[#1A3026] uppercase text-sm font-black tracking-wider">
+                Cambios sin guardar
+              </AlertDialogTitle>
+            </div>
+            <AlertDialogDescription className="text-[#4B5563] text-sm pt-2">
+              Tienes información pendiente. Si sales ahora, perderás los cambios no guardados.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={handleCancelPendingChanges}
+              className="rounded-xl border-2 border-[#D1E8D5] text-[#1A3026] font-black text-[11px] uppercase"
+            >
+              Quedarme aquí
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmPendingChanges}
+              className="rounded-xl bg-[#2E8B57] hover:bg-[#1A3026] text-white font-black text-[11px] uppercase"
+            >
+              Salir sin guardar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <style jsx global>{`
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }

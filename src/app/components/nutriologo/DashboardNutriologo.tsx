@@ -10,10 +10,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/app/components/ui/avatar'
 const COLORS = ['#2E8B57', '#3CB371', '#D1E8D5'];
 
 // Ajusta este base URL según tu bucket real en Supabase Storage
-// Ejemplo: si tu bucket se llama "avatars" o "fotos-perfil", cámbialo aquí
 const STORAGE_PUBLIC_URL = 'https://hthnkzwjotwqhvjgqhfv.supabase.co/storage/v1/object/public/perfiles/';
 
-// Componente de carga animado (sin cambios)
 function AnimatedLoadingScreen() {
   const iconRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
@@ -217,7 +215,12 @@ export function DashboardNutriologo() {
         ingresosPorMes.push({ mes: mesDisplay, ingresos });
       }
 
-      // 6. Próximas citas + foto_perfil
+      // 6. Próximas citas SOLO de HOY, sin completadas, ordenadas por hora
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const todayEnd = new Date();
+      todayEnd.setHours(23, 59, 59, 999);
+
       const { data: proximasCitasRaw, error: errProx } = await supabase
         .from('citas')
         .select(`
@@ -231,18 +234,18 @@ export function DashboardNutriologo() {
           )
         `)
         .eq('id_nutriologo', nutriologoId)
-        .in('estado', ['confirmada', 'pendiente'])
-        .gte('fecha_hora', new Date().toISOString())
-        .order('fecha_hora', { ascending: true })
+        .in('estado', ['confirmada', 'pendiente'])  // Solo pendientes y confirmadas
+        .gte('fecha_hora', todayStart.toISOString())  // Desde 00:00 hoy
+        .lte('fecha_hora', todayEnd.toISOString())    // Hasta 23:59 hoy
+        .order('fecha_hora', { ascending: true })     // Más cercana primero
         .limit(6);
 
       if (errProx) throw errProx;
 
-      // Construir URLs públicas para las fotos
+      // Construir URLs públicas para fotos
       const proximasCitas = proximasCitasRaw.map(cita => {
         let fotoUrl = cita.pacientes?.foto_perfil;
 
-        // Si es solo nombre de archivo → agregar base URL pública
         if (fotoUrl && !fotoUrl.startsWith('http')) {
           fotoUrl = `${STORAGE_PUBLIC_URL}${fotoUrl}`;
         }
@@ -389,7 +392,7 @@ export function DashboardNutriologo() {
           </div>
         </div>
 
-        {/* Próximas citas con AVATAR */}
+        {/* Próximas citas con AVATAR - SIN CAMBIOS EN DISEÑO */}
         <div className="bg-white p-8 rounded-[2.5rem] border-2 border-[#D1E8D5] shadow-sm">
           <h3 className="text-lg font-black text-[#1A3026] uppercase tracking-[3px] mb-8">Próximas Citas</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
