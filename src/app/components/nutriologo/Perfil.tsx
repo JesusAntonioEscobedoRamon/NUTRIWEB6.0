@@ -406,7 +406,7 @@ export function Perfil() {
                   </div>
                 </div>
 
-                {/* SI SE SUBIO XD */}
+                {/* subio x2 xd */}
                 <div>
                   <label className="text-xs md:text-sm font-black uppercase text-gray-500 ml-1">Descripción Profesional</label>
                   <textarea
