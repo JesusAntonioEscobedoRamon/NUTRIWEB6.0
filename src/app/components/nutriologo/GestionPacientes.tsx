@@ -353,7 +353,7 @@ export function GestionPacientes() {
               </h1>
               <div className="w-16 h-1.5 bg-[#3CB371] rounded-full mt-2" />
             </div>
-            <p className="text-[#3CB371] font-bold text-sm mt-4 uppercase tracking-[2px]">
+            <p className="text-[#3CB371] font-bold text-lg mt-4 uppercase tracking-[2px]">
               Gestiona la información de tus pacientes
             </p>
           </div>
@@ -366,14 +366,14 @@ export function GestionPacientes() {
             placeholder="BUSCAR PACIENTE POR NOMBRE O EMAIL..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-14 py-5 bg-white border-2 border-[#D1E8D5] rounded-2xl focus:border-[#2E8B57] outline-none text-[10px] font-black tracking-widest uppercase placeholder:text-gray-400 shadow-sm transition-all"
+            className="w-full pl-14 py-5 bg-white border-2 border-[#D1E8D5] rounded-2xl focus:border-[#2E8B57] outline-none text-sm font-black tracking-widest uppercase placeholder:text-gray-400 shadow-sm transition-all"
           />
         </div>
 
         {/* Tabla de pacientes */}
         <div className="bg-white rounded-[2.5rem] border-2 border-[#D1E8D5] shadow-sm overflow-hidden">
           <div className="p-8 border-b border-[#F0FFF4] flex items-center justify-between bg-[#F8FFF9]/50">
-            <h3 className="text-sm font-[900] text-[#1A3026] uppercase tracking-[2px]">
+            <h3 className="text-lg font-[900] text-[#1A3026] uppercase tracking-[2px]">
               Pacientes Activos ({pacientesFiltrados.length})
             </h3>
             <Activity className="text-[#3CB371]" size={20} />
@@ -383,13 +383,13 @@ export function GestionPacientes() {
             <Table>
               <TableHeader>
                 <TableRow className="border-none hover:bg-transparent">
-                  <TableHead className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Paciente</TableHead>
-                  <TableHead className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Edad</TableHead>
-                  <TableHead className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Peso/Altura</TableHead>
-                  <TableHead className="text-[10px] font-black uppercase text-gray-500 tracking-wider">IMC</TableHead>
-                  <TableHead className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Objetivo</TableHead>
-                  <TableHead className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Puntos</TableHead>
-                  <TableHead className="text-right text-[10px] font-black uppercase text-gray-500 tracking-wider">Acciones</TableHead>
+                  <TableHead className="text-xs font-black uppercase text-gray-500 tracking-wider">Paciente</TableHead>
+                  <TableHead className="text-xs font-black uppercase text-gray-500 tracking-wider">Edad</TableHead>
+                  <TableHead className="text-xs font-black uppercase text-gray-500 tracking-wider">Peso/Altura</TableHead>
+                  <TableHead className="text-xs font-black uppercase text-gray-500 tracking-wider">IMC</TableHead>
+                  <TableHead className="text-xs font-black uppercase text-gray-500 tracking-wider">Objetivo</TableHead>
+                  <TableHead className="text-xs font-black uppercase text-gray-500 tracking-wider">Puntos</TableHead>
+                  <TableHead className="text-right text-xs font-black uppercase text-gray-500 tracking-wider">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -409,21 +409,21 @@ export function GestionPacientes() {
                             />
                           </div>
                           <div>
-                            <p className="font-black text-[#1A3026] uppercase text-xs tracking-tight">
+                            <p className="font-black text-[#1A3026] uppercase text-sm tracking-tight">
                               {paciente.nombre} {paciente.apellido}
                             </p>
-                            <p className="text-[10px] font-bold text-gray-400">{paciente.email}</p>
+                            <p className="text-xs font-bold text-gray-400">{paciente.email}</p>
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="font-bold text-gray-600 text-xs">{paciente.edad} AÑOS</TableCell>
-                      <TableCell className="font-bold text-gray-600 text-xs">{paciente.peso}KG / {paciente.altura}CM</TableCell>
+                      <TableCell className="font-bold text-gray-600 text-sm">{paciente.edad} AÑOS</TableCell>
+                      <TableCell className="font-bold text-gray-600 text-sm">{paciente.peso}KG / {paciente.altura}CM</TableCell>
                       <TableCell>
-                        <Badge className={`${categoria.color} border-2 px-3 py-1 rounded-xl font-black text-[9px] uppercase tracking-tighter shadow-none`}>
+                        <Badge className={`${categoria.color} border-2 px-3 py-1 rounded-xl font-black text-[11px] uppercase tracking-tighter shadow-none`}>
                           {imc} - {categoria.label}
                         </Badge>
                       </TableCell>
-                      <TableCell className="font-black text-[#2E8B57] text-[10px] uppercase max-w-[120px] truncate" title={paciente.objetivo}>
+                      <TableCell className="font-black text-[#2E8B57] text-xs uppercase max-w-[120px] truncate" title={paciente.objetivo}>
                         {paciente.objetivo}
                       </TableCell>
                       <TableCell>
@@ -431,7 +431,7 @@ export function GestionPacientes() {
                           <div className="bg-yellow-50 p-1.5 rounded-lg border border-yellow-100">
                             <Award className="h-3.5 w-3.5 text-yellow-500" />
                           </div>
-                          <span className="font-black text-[#1A3026] text-sm">{paciente.puntos}</span>
+                          <span className="font-black text-[#1A3026] text-base">{paciente.puntos}</span>
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
@@ -439,7 +439,7 @@ export function GestionPacientes() {
                           variant="outline" 
                           size="sm"
                           onClick={() => handleVerDetalles(paciente)}
-                          className="border-2 border-[#D1E8D5] text-[#2E8B57] font-black text-[10px] uppercase tracking-widest rounded-xl hover:bg-[#F0FFF4] hover:border-[#2E8B57] transition-all px-4"
+                          className="border-2 border-[#D1E8D5] text-[#2E8B57] font-black text-xs uppercase tracking-widest rounded-xl hover:bg-[#F0FFF4] hover:border-[#2E8B57] transition-all px-4"
                         >
                           Ver Detalles
                         </Button>
@@ -465,7 +465,7 @@ export function GestionPacientes() {
         <DialogContent className="max-w-3xl rounded-[2.5rem] border-2 border-[#D1E8D5] bg-white p-0 overflow-hidden font-sans">
           <div className="custom-dialog-scroll overflow-y-auto max-h-[90vh] p-8">
             <DialogHeader>
-              <DialogTitle className="text-2xl font-[900] text-[#2E8B57] uppercase tracking-[2px] mb-4 text-left flex items-center gap-4">
+              <DialogTitle className="text-3xl font-[900] text-[#2E8B57] uppercase tracking-[2px] mb-4 text-left flex items-center gap-4">
                 <div className="h-16 w-16 bg-[#F0FFF4] rounded-full overflow-hidden border-2 border-[#D1E8D5] flex-shrink-0">
                   <ImageWithFallback
                     src={selectedPaciente?.foto_perfil}
@@ -482,33 +482,33 @@ export function GestionPacientes() {
                 {/* Contenedores fijos */}
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   <div className="bg-[#F8FFF9] p-3 rounded-xl border border-[#D1E8D5] min-h-[80px] flex flex-col">
-                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">EMAIL</p>
-                    <p className="text-xs font-black text-[#1A3026] break-all">{selectedPaciente.email}</p>
+                    <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">EMAIL</p>
+                    <p className="text-sm font-black text-[#1A3026] break-all">{selectedPaciente.email}</p>
                   </div>
 
                   <div className="bg-[#F8FFF9] p-3 rounded-xl border border-[#D1E8D5] min-h-[80px] flex flex-col">
-                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">EDAD</p>
-                    <p className="text-xs font-black text-[#1A3026]">{selectedPaciente.edad} años</p>
+                    <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">EDAD</p>
+                    <p className="text-sm font-black text-[#1A3026]">{selectedPaciente.edad} años</p>
                   </div>
 
                   <div className="bg-[#F8FFF9] p-3 rounded-xl border border-[#D1E8D5] min-h-[80px] flex flex-col">
-                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">IMC</p>
-                    <Badge className={`${categoriaIMC(Number(calcularIMC(parseFloat(editPeso), parseFloat(editAltura)))).color} border-2 px-3 py-1 rounded-xl font-black text-[9px] uppercase tracking-tighter shadow-none`}>
+                    <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">IMC</p>
+                    <Badge className={`${categoriaIMC(Number(calcularIMC(parseFloat(editPeso), parseFloat(editAltura)))).color} border-2 px-3 py-1 rounded-xl font-black text-[11px] uppercase tracking-tighter shadow-none`}>
                       {calcularIMC(parseFloat(editPeso), parseFloat(editAltura))} - {categoriaIMC(Number(calcularIMC(parseFloat(editPeso), parseFloat(editAltura)))).label}
                     </Badge>
                   </div>
 
                   <div className="bg-[#F8FFF9] p-3 rounded-xl border border-[#D1E8D5] min-h-[80px] flex flex-col">
-                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">PUNTOS</p>
+                    <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">PUNTOS</p>
                     <div className="flex items-center gap-2">
                       <Award size={14} className="text-yellow-500 flex-shrink-0" />
-                      <p className="text-xs font-black text-[#1A3026]">{selectedPaciente.puntos}</p>
+                      <p className="text-sm font-black text-[#1A3026]">{selectedPaciente.puntos}</p>
                     </div>
                   </div>
 
                   <div className="bg-[#F8FFF9] p-3 rounded-xl border border-[#D1E8D5] min-h-[80px] flex flex-col">
-                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">REGISTRO</p>
-                    <p className="text-xs font-black text-[#1A3026]">{selectedPaciente.fechaRegistro}</p>
+                    <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">REGISTRO</p>
+                    <p className="text-sm font-black text-[#1A3026]">{selectedPaciente.fechaRegistro}</p>
                   </div>
                 </div>
 
@@ -524,7 +524,7 @@ export function GestionPacientes() {
                         step="0.1"
                         value={editAltura}
                         onChange={(e) => setEditAltura(e.target.value)}
-                        className="text-xs border-[#D1E8D5] focus:border-[#2E8B57]"
+                        className="text-sm border-[#D1E8D5] focus:border-[#2E8B57]"
                       />
                     </AccordionContent>
                   </AccordionItem>
@@ -539,7 +539,7 @@ export function GestionPacientes() {
                         step="0.1"
                         value={editPeso}
                         onChange={(e) => setEditPeso(e.target.value)}
-                        className="text-xs border-[#D1E8D5] focus:border-[#2E8B57]"
+                        className="text-sm border-[#D1E8D5] focus:border-[#2E8B57]"
                       />
                     </AccordionContent>
                   </AccordionItem>
@@ -550,7 +550,7 @@ export function GestionPacientes() {
                       <Textarea
                         value={editObjetivo}
                         onChange={(e) => setEditObjetivo(e.target.value)}
-                        className="text-xs border-[#D1E8D5] focus:border-[#2E8B57] min-h-[80px]"
+                        className="text-sm border-[#D1E8D5] focus:border-[#2E8B57] min-h-[80px]"
                         placeholder="Ej: Perder 10 kg, ganar masa muscular..."
                       />
                     </AccordionContent>
@@ -580,7 +580,7 @@ export function GestionPacientes() {
                 )}
 
                 <div className="pt-6 border-t-2 border-dashed border-[#F0FFF4]">
-                  <h4 className="text-xs font-black text-[#2E8B57] uppercase tracking-[3px] mb-6 flex items-center gap-2">
+                  <h4 className="text-sm font-black text-[#2E8B57] uppercase tracking-[3px] mb-6 flex items-center gap-2">
                     <TrendingUp size={16} /> Progreso Semanal de Calorías
                   </h4>
                   <div className="grid grid-cols-7 gap-2">
@@ -589,7 +589,7 @@ export function GestionPacientes() {
                       const porcentaje = (calorias / selectedPaciente.metaCalorias) * 100;
                       return (
                         <div key={dia} className="text-center">
-                          <div className="text-[9px] font-black text-gray-400 mb-2">{dia}</div>
+                          <div className="text-xs font-black text-gray-400 mb-2">{dia}</div>
                           <div className="h-24 w-full bg-[#F0FFF4] rounded-xl flex items-end justify-center border border-[#D1E8D5] overflow-hidden">
                             <div 
                               className={`w-full transition-all duration-500 ${
@@ -599,7 +599,7 @@ export function GestionPacientes() {
                               style={{ height: `${Math.min(porcentaje, 100)}%` }}
                             />
                           </div>
-                          <div className="text-[9px] font-black text-[#1A3026] mt-2">{calorias}</div>
+                          <div className="text-xs font-black text-[#1A3026] mt-2">{calorias}</div>
                         </div>
                       );
                     })}

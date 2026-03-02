@@ -4,11 +4,14 @@ import { Button } from '@/app/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/app/components/ui/table';
 import { Badge } from '@/app/components/ui/badge';
 import { Input } from '@/app/components/ui/input'; // ← IMPORTACIÓN QUE FALTABA
+import { Avatar, AvatarFallback, AvatarImage } from '@/app/components/ui/avatar';
 import { useAuth } from '@/app/context/useAuth';
 import { supabase } from '@/app/context/supabaseClient';
 import { DollarSign, Download, TrendingUp, CreditCard, CheckCircle, Clock, Wallet, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import jsPDF from 'jspdf';
+
+const STORAGE_PUBLIC_URL = 'https://hthnkzwjotwqhvjgqhfv.supabase.co/storage/v1/object/public/perfiles/';
 
 // Componente de carga animado (sin cambios)
 function AnimatedLoadingScreen() {
@@ -133,7 +136,31 @@ export function GestionPagos() {
 
         if (errCitas) throw errCitas;
 
+        const correosPacientes = [...new Set((citasData || [])
+          .map((c: any) => c.paciente_correo)
+          .filter(Boolean))];
+
+        let fotoPerfilPorCorreo: Record<string, string> = {};
+        if (correosPacientes.length > 0) {
+          const { data: pacientesFotos } = await supabase
+            .from('pacientes')
+            .select('correo, foto_perfil')
+            .in('correo', correosPacientes);
+
+          fotoPerfilPorCorreo = (pacientesFotos || []).reduce((acc: Record<string, string>, p: any) => {
+            if (p?.correo && p?.foto_perfil) {
+              acc[p.correo] = p.foto_perfil;
+            }
+            return acc;
+          }, {});
+        }
+
         const citasFormateadas = citasData?.map(c => ({
+          foto_perfil: (() => {
+            const fotoRaw = c.paciente_foto_perfil || fotoPerfilPorCorreo[c.paciente_correo] || null;
+            if (!fotoRaw) return null;
+            return fotoRaw.startsWith('http') ? fotoRaw : `${STORAGE_PUBLIC_URL}${fotoRaw}`;
+          })(),
           id: c.id_cita,
           fecha_hora: new Date(c.fecha_hora),
           fecha: new Date(c.fecha_hora).toLocaleDateString('es-MX'),
@@ -248,12 +275,12 @@ export function GestionPagos() {
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 px-2">
           <div>
             <div className="inline-flex flex-col items-start">
-              <h1 className="text-4xl font-[900] text-[#2E8B57] tracking-[4px] uppercase">
+              <h1 className="text-4xl md:text-5xl font-[900] text-[#2E8B57] tracking-[4px] uppercase">
                 Control Financiero
               </h1>
               <div className="w-16 h-1.5 bg-[#3CB371] rounded-full mt-2" />
             </div>
-            <p className="text-[#3CB371] font-bold text-sm mt-4 uppercase tracking-[2px]">
+            <p className="text-[#3CB371] font-bold text-base md:text-lg mt-4 uppercase tracking-[2px]">
               Ingresos y seguimiento de pagos
             </p>
           </div>
@@ -267,8 +294,8 @@ export function GestionPagos() {
                 <TrendingUp className="text-[#2E8B57]" size={28} />
               </div>
               <div>
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Ingresos Totales</p>
-                <p className="text-3xl font-[900] text-[#1A3026]">${ingresosTotales.toLocaleString('es-MX')}</p>
+                <p className="text-xs md:text-sm font-black text-gray-400 uppercase tracking-widest mb-1">Ingresos Totales</p>
+                <p className="text-4xl font-[900] text-[#1A3026]">${ingresosTotales.toLocaleString('es-MX')}</p>
               </div>
             </CardContent>
           </Card>
@@ -279,8 +306,8 @@ export function GestionPagos() {
                 <Clock className="text-orange-600" size={28} />
               </div>
               <div>
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Pendiente de Cobro</p>
-                <p className="text-3xl font-[900] text-[#1A3026]">${pendientesCobro.toLocaleString('es-MX')}</p>
+                <p className="text-xs md:text-sm font-black text-gray-400 uppercase tracking-widest mb-1">Pendiente de Cobro</p>
+                <p className="text-4xl font-[900] text-[#1A3026]">${pendientesCobro.toLocaleString('es-MX')}</p>
               </div>
             </CardContent>
           </Card>
@@ -291,8 +318,8 @@ export function GestionPagos() {
                 <DollarSign className="text-white" size={28} />
               </div>
               <div>
-                <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest mb-1">Citas este mes</p>
-                <p className="text-3xl font-[900]">{citasEsteMes} Consultas</p>
+                <p className="text-xs md:text-sm font-black text-gray-300 uppercase tracking-widest mb-1">Citas este mes</p>
+                <p className="text-4xl font-[900]">{citasEsteMes} Consultas</p>
               </div>
             </CardContent>
           </Card>
@@ -305,14 +332,14 @@ export function GestionPagos() {
             placeholder="BUSCAR PACIENTE POR NOMBRE O EMAIL..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-14 py-5 bg-white border-2 border-[#D1E8D5] rounded-2xl focus:border-[#2E8B57] outline-none text-[10px] font-black tracking-widest uppercase placeholder:text-gray-400 shadow-sm transition-all"
+            className="w-full pl-14 py-5 bg-white border-2 border-[#D1E8D5] rounded-2xl focus:border-[#2E8B57] outline-none text-xs md:text-sm font-black tracking-widest uppercase placeholder:text-gray-400 shadow-sm transition-all"
           />
         </div>
 
         {/* Tabla de Transacciones */}
         <div className="bg-white rounded-[2.5rem] border-2 border-[#D1E8D5] shadow-sm overflow-hidden">
           <div className="p-8 border-b border-[#F0FFF4] flex items-center justify-between bg-[#F8FFF9]/50">
-            <h3 className="text-sm font-[900] text-[#1A3026] uppercase tracking-[2px]">
+            <h3 className="text-base md:text-lg font-[900] text-[#1A3026] uppercase tracking-[2px]">
               Historial de Transacciones ({filteredCitas.length})
             </h3>
             <CreditCard className="text-[#3CB371]" size={20} />
@@ -322,28 +349,42 @@ export function GestionPagos() {
             <Table>
               <TableHeader>
                 <TableRow className="border-none hover:bg-transparent px-4">
-                  <TableHead className="pl-8 text-[10px] font-black uppercase text-gray-400 tracking-wider">Paciente</TableHead>
-                  <TableHead className="text-[10px] font-black uppercase text-gray-400 tracking-wider">Fecha y Hora</TableHead>
-                  <TableHead className="text-[10px] font-black uppercase text-gray-400 tracking-wider">Monto</TableHead>
-                  <TableHead className="text-[10px] font-black uppercase text-gray-400 tracking-wider">Estado</TableHead>
-                  <TableHead className="text-right pr-8 text-[10px] font-black uppercase text-gray-400 tracking-wider">Acciones</TableHead>
+                  <TableHead className="pl-8 text-xs md:text-sm font-black uppercase text-gray-400 tracking-wider">Paciente</TableHead>
+                  <TableHead className="text-xs md:text-sm font-black uppercase text-gray-400 tracking-wider">Fecha y Hora</TableHead>
+                  <TableHead className="text-xs md:text-sm font-black uppercase text-gray-400 tracking-wider">Monto</TableHead>
+                  <TableHead className="text-xs md:text-sm font-black uppercase text-gray-400 tracking-wider">Estado</TableHead>
+                  <TableHead className="text-right pr-8 text-xs md:text-sm font-black uppercase text-gray-400 tracking-wider">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredCitas.map((cita) => (
                   <TableRow key={cita.id} className="border-b border-[#F0FFF4] hover:bg-[#F8FFF9] transition-colors group">
                     <TableCell className="py-6 pl-8">
-                      <p className="font-black text-[#1A3026] uppercase text-xs tracking-tight">
-                        {cita.paciente.nombre} {cita.paciente.apellido}
-                      </p>
-                      <p className="text-[10px] font-bold text-gray-400">{cita.paciente.email}</p>
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-10 w-10 border-2 border-[#D1E8D5]">
+                          <AvatarImage
+                            src={cita.foto_perfil || ''}
+                            alt={`${cita.paciente.nombre} ${cita.paciente.apellido}`}
+                            className="object-cover"
+                          />
+                          <AvatarFallback className="bg-[#F0FFF4] text-[#2E8B57] font-black text-xs uppercase">
+                            {`${cita.paciente.nombre?.[0] || ''}${cita.paciente.apellido?.[0] || ''}`.trim() || 'NA'}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="font-black text-[#1A3026] uppercase text-sm md:text-base tracking-tight">
+                            {cita.paciente.nombre} {cita.paciente.apellido}
+                          </p>
+                          <p className="text-xs md:text-sm font-bold text-gray-400">{cita.paciente.email}</p>
+                        </div>
+                      </div>
                     </TableCell>
-                    <TableCell className="font-bold text-gray-600 text-xs uppercase">{cita.fecha} • {cita.hora}</TableCell>
-                    <TableCell className="font-[900] text-[#1A3026] text-sm">${cita.monto.toLocaleString('es-MX')}</TableCell>
+                    <TableCell className="font-bold text-gray-600 text-sm md:text-base uppercase">{cita.fecha} • {cita.hora}</TableCell>
+                    <TableCell className="font-[900] text-[#1A3026] text-base md:text-lg">${cita.monto.toLocaleString('es-MX')}</TableCell>
                     <TableCell>
                       <Badge className={`
                         ${cita.pagada ? 'bg-[#F0FFF4] text-[#2E8B57] border-[#D1E8D5]' : 'bg-orange-50 text-orange-600 border-orange-100'} 
-                        border-2 px-3 py-1 rounded-xl font-black text-[9px] uppercase shadow-none
+                        border-2 px-3 py-1 rounded-xl font-black text-[10px] md:text-xs uppercase shadow-none
                       `}>
                         {cita.pagada ? 'Pagado' : 'Pendiente'}
                       </Badge>
@@ -362,7 +403,7 @@ export function GestionPagos() {
                 ))}
                 {filteredCitas.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-10 text-gray-500">
+                    <TableCell colSpan={5} className="text-center py-10 text-sm md:text-base text-gray-500">
                       No hay transacciones registradas {searchQuery && 'o que coincidan con la búsqueda'}
                     </TableCell>
                   </TableRow>

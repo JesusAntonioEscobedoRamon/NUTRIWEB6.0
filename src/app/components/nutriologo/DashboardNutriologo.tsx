@@ -313,7 +313,7 @@ export function DashboardNutriologo() {
               </h1>
               <div className="w-16 h-1.5 bg-[#3CB371] rounded-full mt-2" />
             </div>
-            <p className="text-[#3CB371] font-bold text-sm mt-4 uppercase tracking-[2px]">
+            <p className="text-[#3CB371] font-bold text-lg mt-4 uppercase tracking-[2px]">
               Bienvenido de nuevo, {user?.nombre || 'Nutriólogo'}
             </p>
           </div>
@@ -329,11 +329,11 @@ export function DashboardNutriologo() {
           ].map((stat, i) => (
             <div key={i} className="bg-white p-6 rounded-[2rem] border-2 border-[#D1E8D5] shadow-sm hover:shadow-md transition-all">
               <div className="flex items-center justify-between mb-4">
-                <span className="text-[10px] font-black uppercase tracking-[2px] text-gray-500">{stat.title}</span>
-                <stat.icon size={20} style={{ color: stat.color }} />
+                <span className="text-sm font-black uppercase tracking-[1.5px] text-gray-500">{stat.title}</span>
+                <stat.icon size={22} style={{ color: stat.color }} />
               </div>
-              <div className="text-3xl font-black text-[#1A3026] tracking-tight">{stat.val}</div>
-              <p className="text-[10px] font-bold text-[#3CB371] uppercase mt-1 tracking-wider">{stat.desc}</p>
+              <div className="text-5xl font-black text-[#1A3026] tracking-tight">{stat.val}</div>
+              <p className="text-sm font-bold text-[#3CB371] uppercase mt-1 tracking-wide">{stat.desc}</p>
             </div>
           ))}
         </div>
@@ -341,15 +341,15 @@ export function DashboardNutriologo() {
         {/* Gráficas */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <div className="bg-white p-8 rounded-[2.5rem] border-2 border-[#D1E8D5] shadow-sm">
-            <h3 className="text-lg font-black text-[#1A3026] uppercase tracking-[2px] mb-6 flex items-center gap-2">
+            <h3 className="text-2xl font-black text-[#1A3026] uppercase tracking-[2px] mb-6 flex items-center gap-2">
               <TrendingUp size={18} className="text-[#2E8B57]" /> Ingresos por Mes
             </h3>
             <div className="h-[300px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={dashboardData.ingresosPorMes}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F0FFF4" />
-                  <XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{fill: '#1A3026', fontWeight: 'bold', fontSize: 12}} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#1A3026', fontWeight: 'bold', fontSize: 12}} />
+                  <XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{fill: '#1A3026', fontWeight: 'bold', fontSize: 15}} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#1A3026', fontWeight: 'bold', fontSize: 15}} />
                   <Tooltip cursor={{fill: '#F0FFF4'}} contentStyle={{borderRadius: '15px', border: '2px solid #D1E8D5'}} />
                   <Bar dataKey="ingresos" fill="#2E8B57" radius={[10, 10, 0, 0]} />
                 </BarChart>
@@ -358,7 +358,7 @@ export function DashboardNutriologo() {
           </div>
 
           <div className="bg-white p-8 rounded-[2.5rem] border-2 border-[#D1E8D5] shadow-sm">
-            <h3 className="text-lg font-black text-[#1A3026] uppercase tracking-[2px] mb-6 flex items-center gap-2">
+            <h3 className="text-2xl font-black text-[#1A3026] uppercase tracking-[2px] mb-6 flex items-center gap-2">
               <CheckCircle2 size={18} className="text-[#2E8B57]" /> Estado de Citas
             </h3>
             <div className="h-[300px] w-full">
@@ -383,8 +383,8 @@ export function DashboardNutriologo() {
               <div className="flex justify-center gap-4 mt-2">
                 {dashboardData.citasPorEstado.map((entry, i) => (
                   <div key={i} className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full" style={{backgroundColor: COLORS[i]}} />
-                    <span className="text-[9px] font-black uppercase text-gray-500">{entry.name}</span>
+                    <div className="w-4 h-4 rounded-full" style={{backgroundColor: COLORS[i]}} />
+                    <span className="text-xs font-black uppercase text-gray-500">{entry.name}</span>
                   </div>
                 ))}
               </div>

@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/ca
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
+import { Calendar as DateCalendar } from '@/app/components/ui/calendar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/app/components/ui/dialog';
 import { Badge } from '@/app/components/ui/badge';
@@ -12,9 +13,17 @@ import { Calendar, Clock, Plus, CheckCircle, History, LayoutDashboard, CalendarC
 import { toast } from 'sonner';
 import { Avatar, AvatarFallback, AvatarImage } from '@/app/components/ui/avatar';
 import { DateTime } from 'luxon'; // ← Nueva importación
+import { es } from 'date-fns/locale';
 
 const SONORA_TIMEZONE = 'America/Hermosillo';
 const STORAGE_PUBLIC_URL = 'https://hthnkzwjotwqhvjgqhfv.supabase.co/storage/v1/object/public/perfiles/';
+const WORK_START_HOUR = 8;
+const WORK_END_HOUR = 17;
+const APPOINTMENT_TIME_SLOTS = [
+  '08:00', '08:30', '09:00', '09:30', '10:00', '10:30',
+  '11:00', '11:30', '12:00', '12:30', '13:00', '13:30',
+  '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00'
+];
 
 function AnimatedLoadingScreen() {
   const iconRef = useRef<HTMLDivElement>(null);
@@ -113,7 +122,14 @@ function AnimatedLoadingScreen() {
 
 export function GestionCitas() {
   const { user } = useAuth();
+  const currentYear = new Date().getFullYear();
+  const minYear = Math.min(currentYear, 2027);
+  const maxYear = Math.max(currentYear, 2027);
+  const minDate = `${minYear}-01-01`;
+  const maxDate = `${maxYear}-12-31`;
+  const todayIso = new Date().toISOString().split('T')[0];
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isDateModalOpen, setIsDateModalOpen] = useState(false);
   const [selectedPaciente, setSelectedPaciente] = useState('');
   const [fecha, setFecha] = useState('');
   const [hora, setHora] = useState('');
@@ -122,7 +138,8 @@ export function GestionCitas() {
   const [filteredPacientes, setFilteredPacientes] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]); // Hoy por defecto
+  const [selectedDate, setSelectedDate] = useState(todayIso); // Hoy por defecto
+  const [draftSelectedDate, setDraftSelectedDate] = useState(todayIso);
 
   useEffect(() => {
     if (!user?.nutriologoId) {
@@ -243,6 +260,26 @@ export function GestionCitas() {
   const citasFiltradas = filterCitasByDate(selectedDate);
   const citasPendientes = citasFiltradas.filter(c => c.estado === 'pendiente' || c.estado === 'confirmada');
   const citasCompletadas = citasFiltradas.filter(c => c.estado === 'completada');
+  const draftDateObject = draftSelectedDate ? DateTime.fromISO(draftSelectedDate).toJSDate() : undefined;
+  const fechaDateObject = fecha ? DateTime.fromISO(fecha).toJSDate() : undefined;
+  const minDateObject = DateTime.fromISO(minDate).toJSDate();
+  const maxDateObject = DateTime.fromISO(maxDate).toJSDate();
+  const selectedPacienteInfo = pacientes.find(
+    (p) => p.id_paciente.toString() === selectedPaciente
+  );
+  const occupiedHoursForSelectedDate = new Set(
+    fecha
+      ? citas
+          .filter((c) => {
+            if (c.estado === 'cancelada') return false;
+            const sonoraDate = DateTime.fromISO(c.fecha_hora, { zone: 'utc' }).setZone(SONORA_TIMEZONE);
+            return sonoraDate.toFormat('yyyy-LL-dd') === fecha;
+          })
+          .map((c) => DateTime.fromISO(c.fecha_hora, { zone: 'utc' }).setZone(SONORA_TIMEZONE).toFormat('HH:mm'))
+      : []
+  );
+  const morningSlots = APPOINTMENT_TIME_SLOTS.filter((slot) => Number(slot.split(':')[0]) < 12);
+  const afternoonSlots = APPOINTMENT_TIME_SLOTS.filter((slot) => Number(slot.split(':')[0]) >= 12);
 
   // Búsqueda en tiempo real
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -290,6 +327,21 @@ export function GestionCitas() {
     try {
       const [year, month, day] = fecha.split('-').map(Number);
       const [hours, minutes] = hora.split(':').map(Number);
+
+      const selectedMinutes = hours * 60 + minutes;
+      const workStartMinutes = WORK_START_HOUR * 60;
+      const workEndMinutes = WORK_END_HOUR * 60;
+
+      if (selectedMinutes < workStartMinutes || selectedMinutes > workEndMinutes) {
+        toast.error('La cita debe agendarse en horario laboral: 08:00 a 17:00.');
+        return;
+      }
+
+      if (occupiedHoursForSelectedDate.has(hora)) {
+        toast.error('Ese horario ya tiene una cita agendada para la fecha seleccionada.');
+        return;
+      }
+
       const localSonora = DateTime.local(year, month, day, hours, minutes, { zone: SONORA_TIMEZONE });
 
       const now = DateTime.local({ zone: SONORA_TIMEZONE });
@@ -444,49 +496,42 @@ export function GestionCitas() {
               </h1>
               <div className="w-16 h-1.5 bg-[#3CB371] rounded-full mt-2" />
             </div>
-            <p className="text-[#3CB371] font-bold text-sm mt-4 uppercase tracking-[2px]">
+            <p className="text-[#3CB371] font-bold text-lg mt-4 uppercase tracking-[2px]">
               Administra tu agenda y consultas
             </p>
           </div>
           
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-[#2E8B57] hover:bg-[#1A3026] text-white font-black py-6 px-8 rounded-2xl shadow-lg transition-all uppercase tracking-widest text-xs flex items-center gap-2">
-                <Plus className="h-5 w-5" />
-                Agendar Cita
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="rounded-[2.5rem] border-2 border-[#D1E8D5] bg-white p-8 max-w-lg font-sans">
-              <DialogHeader>
-                <DialogTitle className="text-2xl font-[900] text-[#2E8B57] uppercase tracking-[2px]">
-                  Nueva Consulta
+          <div className="flex flex-wrap items-center gap-2">
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="bg-[#2E8B57] hover:bg-[#1A3026] text-white font-black py-6 px-8 rounded-2xl shadow-lg transition-all uppercase tracking-widest text-sm flex items-center gap-2">
+                  <Plus className="h-5 w-5" />
+                  Agendar Cita
+                </Button>
+              </DialogTrigger>
+            <DialogContent className="rounded-xl border-2 border-[#D1E8D5] bg-[#F4F8FB] p-0 max-w-5xl font-sans overflow-hidden">
+              <DialogHeader className="px-3 py-2.5 border-b border-[#DDE9EE] bg-[#F1F6F9]">
+                <DialogTitle className="text-3xl font-[900] text-[#1A3026] tracking-[0.5px]">
+                  Agendar Nueva Cita
                 </DialogTitle>
               </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-6 mt-6">
-                {/* Campo de búsqueda */}
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase text-gray-400 tracking-wider">
-                    Buscar Paciente
-                  </Label>
+              <form onSubmit={handleSubmit} className="space-y-2.5 p-3">
+                <div className="bg-white border border-[#DDE9EE] rounded-xl p-2.5 space-y-2">
+                  <p className="text-sm font-[900] text-[#1A3026] uppercase">1. Seleccionar Paciente</p>
+
                   <Input
-                    placeholder="Escribe nombre, apellido o correo..."
+                    placeholder="Buscar por nombre o correo..."
                     value={searchQuery}
                     onChange={(e) => {
                       setSearchQuery(e.target.value);
                       handleSearch(e);
                     }}
                     onKeyDown={handleSearchKeyDown}
-                    className="border-2 border-[#D1E8D5] rounded-xl h-12 font-bold focus:ring-[#2E8B57]"
+                    className="border border-[#CFE1D5] rounded-lg h-10 text-sm"
                   />
-                </div>
 
-                {/* Select de paciente */}
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase text-gray-400 tracking-wider">
-                    Paciente Seleccionado
-                  </Label>
                   <Select value={selectedPaciente} onValueChange={setSelectedPaciente}>
-                    <SelectTrigger className="border-2 border-[#D1E8D5] rounded-xl h-12">
+                    <SelectTrigger className="border border-[#CFE1D5] rounded-lg h-10 text-sm">
                       <SelectValue placeholder="Selecciona o busca un paciente" />
                     </SelectTrigger>
                     <SelectContent className="rounded-xl max-h-60 overflow-y-auto">
@@ -496,84 +541,313 @@ export function GestionCitas() {
                         </div>
                       ) : (
                         filteredPacientes.map((p) => (
-                          <SelectItem 
-                            key={p.id_paciente} 
-                            value={p.id_paciente.toString()} 
-                            className="font-bold text-xs uppercase py-3"
+                          <SelectItem
+                            key={p.id_paciente}
+                            value={p.id_paciente.toString()}
+                            className="font-semibold text-sm py-2.5"
                           >
-                            {p.nombre} {p.apellido} 
+                            {p.nombre} {p.apellido}
                             <span className="text-gray-500 ml-2">({p.correo})</span>
                           </SelectItem>
                         ))
                       )}
                     </SelectContent>
                   </Select>
-                  <p className="text-[9px] font-bold text-gray-400 uppercase leading-tight mt-1">
-                    * Solo pacientes asignados a ti
-                  </p>
+
+                  {selectedPacienteInfo && (
+                    <div className="flex items-center gap-3 rounded-lg border border-[#DDE9EE] bg-[#F8FCF9] p-3">
+                      <Avatar className="h-11 w-11 border border-[#D1E8D5]">
+                        <AvatarImage src={selectedPacienteInfo.foto_perfil || ''} alt={`${selectedPacienteInfo.nombre} ${selectedPacienteInfo.apellido}`} />
+                        <AvatarFallback className="bg-[#E8F5EC] text-[#2E8B57] font-bold">
+                          {`${selectedPacienteInfo.nombre?.[0] || ''}${selectedPacienteInfo.apellido?.[0] || ''}`.toUpperCase() || '?'}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <p className="text-base font-bold text-[#1A3026] truncate">{selectedPacienteInfo.nombre} {selectedPacienteInfo.apellido}</p>
+                        <p className="text-sm text-gray-500 truncate">{selectedPacienteInfo.correo}</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="fecha" className="text-[10px] font-black uppercase text-gray-400 tracking-[1px] ml-1">Fecha</Label>
-                    <Input
-                      id="fecha"
-                      type="date"
-                      value={fecha}
-                      onChange={(e) => setFecha(e.target.value)}
-                      required
-                      className="border-2 border-[#D1E8D5] rounded-xl h-12 text-xs font-bold"
-                    />
+                <div className="grid grid-cols-1 md:grid-cols-[1.2fr_1fr] gap-2.5 items-start">
+                  <div className="bg-white border border-[#DDE9EE] rounded-xl p-2.5 space-y-2">
+                    <p className="text-sm font-[900] text-[#1A3026] uppercase">2. Seleccionar Fecha</p>
+                    <div className="rounded-lg border border-[#D1E8D5] bg-white p-1.5">
+                      <DateCalendar
+                        mode="single"
+                        selected={fechaDateObject}
+                        onSelect={(date) => setFecha(date ? DateTime.fromJSDate(date).toFormat('yyyy-LL-dd') : '')}
+                        locale={es}
+                        fromDate={minDateObject}
+                        toDate={maxDateObject}
+                        fromYear={minYear}
+                        toYear={maxYear}
+                        captionLayout="buttons"
+                        className="w-full"
+                        classNames={{
+                          months: 'w-full',
+                          month: 'w-full flex flex-col gap-0',
+                          table: 'w-full table-fixed border-collapse',
+                          caption: 'flex items-center justify-between px-1.5 pb-1.5 pt-0.5',
+                          caption_label: 'text-base font-[900] text-[#1A3026] uppercase tracking-[0.5px]',
+                          nav_button: 'h-7 w-7 rounded-md border border-[#D1E8D5] bg-white text-[#1A3026] opacity-100 hover:bg-[#F8FFF9]',
+                          head_row: 'w-full grid grid-cols-7 border border-[#7FAF8D] [&>*:nth-child(1)]:bg-[#2E8B57] [&>*:nth-child(2)]:bg-[#3A9A62] [&>*:nth-child(3)]:bg-[#46A66D] [&>*:nth-child(4)]:bg-[#2E8B57] [&>*:nth-child(5)]:bg-[#3A9A62] [&>*:nth-child(6)]:bg-[#46A66D] [&>*:nth-child(7)]:bg-[#2E8B57]',
+                          head_cell: 'h-7 flex items-center justify-center text-[10px] font-black uppercase tracking-[0.5px] text-white border-r border-[#7FAF8D] last:border-r-0',
+                          row: 'w-full grid grid-cols-7 mt-0',
+                          cell: 'w-full h-10 border border-[#9AA0A6]/70 p-0 m-0 text-left align-top bg-white [&:has([aria-selected])]:bg-transparent',
+                          day: 'h-full w-full p-1 justify-start items-start rounded-none text-sm leading-none font-light text-[#1A3026] hover:bg-[#F4F8F5]',
+                          day_selected: 'bg-[#2E8B57] text-white hover:bg-[#1A3026] focus:bg-[#1A3026]',
+                          day_today: 'bg-[#E8F5EC] text-[#1A3026] font-medium border-2 border-[#2E8B57]',
+                          day_outside: 'text-gray-300 opacity-80',
+                        }}
+                      />
+                    </div>
+                    <input id="fecha" type="hidden" value={fecha} required readOnly />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="hora" className="text-[10px] font-black uppercase text-gray-400 tracking-[1px] ml-1">Hora</Label>
-                    <Input
-                      id="hora"
-                      type="time"
-                      value={hora}
-                      onChange={(e) => setHora(e.target.value)}
-                      required
-                      className="border-2 border-[#D1E8D5] rounded-xl h-12 text-xs font-bold"
-                    />
+
+                  <div className="bg-white border border-[#DDE9EE] rounded-xl p-2.5 space-y-2">
+                    <p className="text-sm font-[900] text-[#1A3026] uppercase">3. Seleccionar Hora</p>
+
+                    <div className="space-y-1.5">
+                      <p className="text-sm font-bold text-[#1A3026]">Mañana</p>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {morningSlots.map((slot) => {
+                          const isSelected = hora === slot;
+                          const isBlocked = !fecha || occupiedHoursForSelectedDate.has(slot);
+
+                          return (
+                            <button
+                              key={slot}
+                              type="button"
+                              disabled={isBlocked}
+                              onClick={() => setHora(slot)}
+                              className={`h-10 rounded-md border text-xs font-semibold transition-all ${
+                                isSelected
+                                  ? 'bg-[#2E8B57] border-[#2E8B57] text-white'
+                                  : isBlocked
+                                    ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
+                                    : 'bg-white border-[#CFE1D5] text-[#1A3026] hover:bg-[#F4F8F5]'
+                              }`}
+                              title={isBlocked ? 'Horario no disponible' : 'Seleccionar horario'}
+                            >
+                              <div className="flex items-center justify-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                <span>{slot}</span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <p className="text-sm font-bold text-[#1A3026]">Tarde</p>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {afternoonSlots.map((slot) => {
+                          const isSelected = hora === slot;
+                          const isBlocked = !fecha || occupiedHoursForSelectedDate.has(slot);
+
+                          return (
+                            <button
+                              key={slot}
+                              type="button"
+                              disabled={isBlocked}
+                              onClick={() => setHora(slot)}
+                              className={`h-10 rounded-md border text-xs font-semibold transition-all ${
+                                isSelected
+                                  ? 'bg-[#2E8B57] border-[#2E8B57] text-white'
+                                  : isBlocked
+                                    ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
+                                    : 'bg-white border-[#CFE1D5] text-[#1A3026] hover:bg-[#F4F8F5]'
+                              }`}
+                              title={isBlocked ? 'Horario no disponible' : 'Seleccionar horario'}
+                            >
+                              <div className="flex items-center justify-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                <span>{slot}</span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <input id="hora" type="hidden" value={hora} required readOnly />
+                    <p className="text-xs font-semibold text-gray-500">
+                      Horario laboral: 08:00 a 17:00 {fecha ? '• Horas ocupadas bloqueadas automáticamente' : '• Selecciona fecha para habilitar horarios'}
+                    </p>
                   </div>
                 </div>
 
-                <div className="flex gap-3 pt-4">
-                  <Button 
-                    type="button" 
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    type="button"
                     variant="outline"
                     onClick={() => {
                       setIsDialogOpen(false);
                       setSearchQuery('');
                       setSelectedPaciente('');
                     }}
-                    className="flex-1 border-2 border-[#D1E8D5] text-gray-400 font-black text-[10px] uppercase rounded-xl h-12 hover:bg-gray-50"
+                    className="flex-1 border border-[#D1E8D5] text-gray-600 font-semibold text-sm rounded-lg h-10 hover:bg-gray-50"
                   >
                     Cancelar
                   </Button>
-                  <Button type="submit" className="flex-1 bg-[#2E8B57] text-white font-black text-[10px] uppercase rounded-xl h-12 hover:bg-[#1A3026]">
+                  <Button type="submit" className="flex-1 bg-[#2E8B57] text-white font-semibold text-sm rounded-lg h-10 hover:bg-[#1A3026]">
                     Confirmar Cita
                   </Button>
                 </div>
               </form>
             </DialogContent>
-          </Dialog>
+            </Dialog>
+          </div>
         </div>
 
-        {/* Selector de fecha - Contenedor más compacto */}
-        <div className="bg-white p-4 rounded-[1.5rem] border-2 border-[#D1E8D5] shadow-sm mb-8 max-w-sm">
-          <Label className="text-sm font-black uppercase text-[#1A3026] tracking-[2px] mb-2 block">
-            Ver citas del día
-          </Label>
-          <div className="flex items-center gap-3">
-            <Input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="border-2 border-[#D1E8D5] rounded-xl h-10 text-sm font-bold focus:ring-[#2E8B57] flex-1"
-            />
-            <Calendar className="text-[#2E8B57]" size={20} />
+        {/* Selector de fecha - Diseño profesional alternativo */}
+        <div className="bg-white p-4 rounded-2xl border border-[#D1E8D5] shadow-sm mb-8 max-w-md">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <Label className="text-base font-bold text-[#1A3026] block leading-none">
+                Filtro de agenda
+              </Label>
+              <p className="text-sm font-medium text-gray-500 mt-1">Selecciona una fecha para ver citas</p>
+            </div>
+            <div className="h-9 w-9 rounded-xl border border-[#D1E8D5] bg-[#F8FFF9] flex items-center justify-center text-[#2E8B57]">
+              <Calendar size={16} />
+            </div>
           </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setDraftSelectedDate(selectedDate);
+              setIsDateModalOpen(true);
+            }}
+            className="w-full h-10 border border-[#D1E8D5] rounded-xl bg-white text-[#1A3026] font-semibold text-base justify-between px-3 hover:bg-[#F8FFF9]"
+          >
+            <span>Abrir calendario</span>
+            <Calendar size={15} className="text-[#2E8B57]" />
+          </Button>
+
+          <div className="mt-3 rounded-xl border border-[#D1E8D5] bg-[#F8FFF9] px-3 py-2">
+            <p className="text-xs font-semibold text-gray-500 mb-0.5">Fecha activa</p>
+            <p className="text-sm font-semibold text-[#1A3026] capitalize">
+              {selectedDate
+                ? DateTime.fromISO(selectedDate).setLocale('es').toFormat("dd 'de' LLLL yyyy")
+                : 'Mostrando todas las fechas'}
+            </p>
+          </div>
+
+          <Dialog open={isDateModalOpen} onOpenChange={setIsDateModalOpen}>
+            <DialogContent className="w-[96vw] max-w-[1600px] rounded-md border border-[#D1E8D5] p-0 overflow-hidden h-auto max-h-none">
+              <DialogHeader className="px-4 py-3 border-b border-[#F0FFF4] bg-white">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-8 w-8 rounded-lg bg-[#F8FFF9] border border-[#D1E8D5] flex items-center justify-center text-[#2E8B57]">
+                    <Calendar size={14} />
+                  </div>
+                  <div>
+                    <DialogTitle className="text-[#1A3026] text-lg font-bold leading-tight">
+                      Seleccionar fecha
+                    </DialogTitle>
+                    <p className="text-sm font-medium text-gray-500 mt-0.5">
+                      Filtra tus citas por un día específico
+                    </p>
+                  </div>
+                </div>
+              </DialogHeader>
+
+              <div className="px-4 py-3 space-y-3">
+                <div className="grid grid-cols-3 gap-2 rounded-lg border border-[#D1E8D5] bg-[#F8FFF9] p-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setDraftSelectedDate(todayIso)}
+                    className="border border-[#D1E8D5] rounded-md h-9 text-sm font-semibold bg-white"
+                  >
+                    Hoy
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setDraftSelectedDate(DateTime.fromISO(todayIso).plus({ days: 1 }).toFormat('yyyy-LL-dd'))}
+                    className="border border-[#D1E8D5] rounded-md h-9 text-sm font-semibold bg-white"
+                  >
+                    Mañana
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setDraftSelectedDate(DateTime.fromISO(todayIso).plus({ days: 7 }).toFormat('yyyy-LL-dd'))}
+                    className="border border-[#D1E8D5] rounded-md h-9 text-sm font-semibold bg-white"
+                  >
+                    +7 días
+                  </Button>
+                </div>
+
+                <div className="rounded-lg border border-[#D1E8D5] bg-white p-2">
+                  <DateCalendar
+                    mode="single"
+                    selected={draftDateObject}
+                    onSelect={(date) => setDraftSelectedDate(date ? DateTime.fromJSDate(date).toFormat('yyyy-LL-dd') : '')}
+                    locale={es}
+                    fromDate={minDateObject}
+                    toDate={maxDateObject}
+                    fromYear={minYear}
+                    toYear={maxYear}
+                    captionLayout="buttons"
+                    className="w-full"
+                    classNames={{
+                      months: 'w-full',
+                      month: 'w-full flex flex-col gap-0',
+                      table: 'w-full table-fixed border-collapse',
+                      caption: 'flex items-center justify-between px-2 pb-2 pt-1',
+                      caption_label: 'text-2xl font-[900] text-[#1A3026] uppercase tracking-[1px]',
+                      nav_button: 'h-8 w-8 rounded-md border border-[#D1E8D5] bg-white text-[#1A3026] opacity-100 hover:bg-[#F8FFF9]',
+                      head_row: 'w-full grid grid-cols-7 border border-[#7FAF8D] [&>*:nth-child(1)]:bg-[#2E8B57] [&>*:nth-child(2)]:bg-[#3A9A62] [&>*:nth-child(3)]:bg-[#46A66D] [&>*:nth-child(4)]:bg-[#2E8B57] [&>*:nth-child(5)]:bg-[#3A9A62] [&>*:nth-child(6)]:bg-[#46A66D] [&>*:nth-child(7)]:bg-[#2E8B57]',
+                      head_cell: 'h-9 flex items-center justify-center text-xs font-black uppercase tracking-[0.5px] text-white border-r border-[#7FAF8D] last:border-r-0',
+                      row: 'w-full grid grid-cols-7 mt-0',
+                      cell: 'w-full h-16 border border-[#9AA0A6]/70 p-0 m-0 text-left align-top bg-white [&:has([aria-selected])]:bg-transparent',
+                      day: 'h-full w-full p-1.5 justify-start items-start rounded-none text-xl leading-none font-light text-[#1A3026] hover:bg-[#F4F8F5]',
+                      day_selected: 'bg-[#2E8B57] text-white hover:bg-[#1A3026] focus:bg-[#1A3026]',
+                      day_today: 'bg-[#E8F5EC] text-[#1A3026] font-medium border-2 border-[#2E8B57]',
+                      day_outside: 'text-gray-300 opacity-80',
+                    }}
+                  />
+                </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setDraftSelectedDate('')}
+                  className="w-full border border-[#D1E8D5] rounded-lg h-9 text-sm font-semibold text-gray-600"
+                >
+                  Quitar filtro de fecha
+                </Button>
+              </div>
+
+              <div className="px-4 pb-4 flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsDateModalOpen(false)}
+                  className="flex-1 border border-[#D1E8D5] text-gray-600 font-semibold text-sm rounded-lg h-9"
+                >
+                  Cerrar
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setSelectedDate(draftSelectedDate);
+                    setIsDateModalOpen(false);
+                  }}
+                  className="flex-1 bg-[#2E8B57] text-white font-semibold text-sm rounded-lg h-9 hover:bg-[#1A3026]"
+                >
+                  Aplicar
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
 
         {/* Stats Grid */}
@@ -585,8 +859,8 @@ export function GestionCitas() {
           ].map((stat, i) => (
             <div key={i} className="bg-white p-8 rounded-[2.5rem] border-2 border-[#D1E8D5] shadow-sm flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{stat.label}</p>
-                <p className="text-4xl font-[900] text-[#1A3026]">{stat.val}</p>
+                <p className="text-sm font-black text-gray-400 uppercase tracking-widest mb-1">{stat.label}</p>
+                <p className="text-5xl font-[900] text-[#1A3026]">{stat.val}</p>
               </div>
               <div className={`p-4 rounded-2xl bg-[#F8FFF9] border border-[#D1E8D5] ${stat.color}`}>
                 <stat.icon size={24} />
@@ -599,7 +873,7 @@ export function GestionCitas() {
         <Card className="rounded-[2.5rem] border-2 border-[#D1E8D5] shadow-sm overflow-hidden bg-white">
           <CardHeader className="p-8 border-b border-[#F0FFF4] bg-[#F8FFF9]/50">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-[900] text-[#1A3026] uppercase tracking-[2px]">Próximas Citas</CardTitle>
+              <CardTitle className="text-lg font-[900] text-[#1A3026] uppercase tracking-[2px]">Próximas Citas</CardTitle>
               <Clock className="text-[#3CB371]" size={20} />
             </div>
           </CardHeader>
@@ -608,7 +882,7 @@ export function GestionCitas() {
               {citasPendientes.length === 0 ? (
                 <div className="text-center py-12">
                   <Calendar className="h-16 w-16 mx-auto mb-4 text-[#D1E8D5]" />
-                  <p className="text-xs font-black text-gray-400 uppercase tracking-widest">No hay citas pendientes</p>
+                  <p className="text-base font-black text-gray-400 uppercase tracking-widest">No hay citas pendientes</p>
                 </div>
               ) : (
                 citasPendientes.map((cita) => (
@@ -624,14 +898,14 @@ export function GestionCitas() {
                         </AvatarFallback>
                       </Avatar>
                       <div>
-                        <p className="font-black text-[#1A3026] uppercase text-sm tracking-tight">
+                        <p className="font-black text-[#1A3026] uppercase text-lg tracking-tight">
                           {cita.pacienteNombre}
                         </p>
                         <div className="flex items-center gap-4 mt-1">
-                          <span className="flex items-center gap-1 text-[10px] font-bold text-gray-400 uppercase">
+                          <span className="flex items-center gap-1 text-sm font-bold text-gray-400 uppercase">
                             <Calendar className="h-3 w-3 text-[#3CB371]" /> {cita.fecha}
                           </span>
-                          <span className="flex items-center gap-1 text-[10px] font-bold text-gray-400 uppercase">
+                          <span className="flex items-center gap-1 text-sm font-bold text-gray-400 uppercase">
                             <Clock className="h-3 w-3 text-[#3CB371]" /> {cita.hora}
                           </span>
                         </div>
@@ -639,17 +913,17 @@ export function GestionCitas() {
                     </div>
                     
                     <div className="flex items-center gap-3 mt-4 md:mt-0">
-                      <Badge className={`${getEstadoBadge(cita.estado)} border-2 px-3 py-1 rounded-xl font-black text-[9px] uppercase shadow-none`}>
+                      <Badge className={`${getEstadoBadge(cita.estado)} border-2 px-3 py-1 rounded-xl font-black text-xs uppercase shadow-none`}>
                         {cita.estado}
                       </Badge>
-                      <Badge className={`${cita.pagada ? 'bg-[#F0FFF4] text-[#2E8B57]' : 'bg-red-50 text-red-600'} border-2 px-3 py-1 rounded-xl font-black text-[9px] uppercase shadow-none`}>
+                      <Badge className={`${cita.pagada ? 'bg-[#F0FFF4] text-[#2E8B57]' : 'bg-red-50 text-red-600'} border-2 px-3 py-1 rounded-xl font-black text-xs uppercase shadow-none`}>
                         {cita.pagada ? 'PAGADA' : 'PENDIENTE PAGO'}
                       </Badge>
                       {cita.estado === 'pendiente' && (
                         <Button 
                           size="sm"
                           onClick={() => confirmarCita(cita.id, cita.pacienteNombre, cita.fecha, cita.hora)}
-                          className="bg-white border-2 border-[#2E8B57] text-[#2E8B57] hover:bg-[#2E8B57] hover:text-white font-black text-[9px] uppercase rounded-xl px-4 transition-all"
+                          className="bg-white border-2 border-[#2E8B57] text-[#2E8B57] hover:bg-[#2E8B57] hover:text-white font-black text-xs uppercase rounded-xl px-4 transition-all"
                         >
                           <CheckCircle className="h-3.5 w-3.5 mr-1" />
                           Confirmar
@@ -659,7 +933,7 @@ export function GestionCitas() {
                         <Button 
                           size="sm"
                           onClick={() => finalizarCita(cita.id, cita.pacienteNombre, cita.fecha, cita.hora)}
-                          className="bg-white border-2 border-[#2E8B57] text-[#2E8B57] hover:bg-[#2E8B57] hover:text-white font-black text-[9px] uppercase rounded-xl px-4 transition-all"
+                          className="bg-white border-2 border-[#2E8B57] text-[#2E8B57] hover:bg-[#2E8B57] hover:text-white font-black text-xs uppercase rounded-xl px-4 transition-all"
                         >
                           <CheckCircle className="h-3.5 w-3.5 mr-1" />
                           Finalizar
@@ -677,7 +951,7 @@ export function GestionCitas() {
         <Card className="rounded-[2.5rem] border-2 border-[#D1E8D5] shadow-sm overflow-hidden bg-white">
           <CardHeader className="p-8 border-b border-[#F0FFF4] bg-[#F8FFF9]/50">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-[900] text-[#1A3026] uppercase tracking-[2px]">Historial de Consultas</CardTitle>
+              <CardTitle className="text-lg font-[900] text-[#1A3026] uppercase tracking-[2px]">Historial de Consultas</CardTitle>
               <History className="text-[#3CB371]" size={20} />
             </div>
           </CardHeader>
@@ -696,19 +970,19 @@ export function GestionCitas() {
                       </AvatarFallback>
                     </Avatar>
                     <div>
-                      <p className="font-black text-[#1A3026] uppercase text-xs">
+                      <p className="font-black text-[#1A3026] uppercase text-sm">
                         {cita.pacienteNombre}
                       </p>
-                      <p className="text-[9px] font-bold text-gray-400 uppercase">
+                      <p className="text-xs font-bold text-gray-400 uppercase">
                         {cita.fecha} • {cita.hora}
                       </p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <Badge variant="outline" className="border-2 border-[#D1E8D5] text-[#2E8B57] font-black text-[8px] uppercase px-2 py-0.5 rounded-lg mb-1">
+                    <Badge variant="outline" className="border-2 border-[#D1E8D5] text-[#2E8B57] font-black text-xs uppercase px-2 py-0.5 rounded-lg mb-1">
                       COMPLETADA
                     </Badge>
-                    <p className="text-xs font-black text-[#1A3026] tracking-tight">${cita.monto}</p>
+                    <p className="text-base font-black text-[#1A3026] tracking-tight">${cita.monto}</p>
                   </div>
                 </div>
               ))}

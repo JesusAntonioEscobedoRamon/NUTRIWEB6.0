@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/app/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/app/components/ui/dialog';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/app/components/ui/accordion';
+import { Avatar, AvatarFallback, AvatarImage } from '@/app/components/ui/avatar';
 import { supabase } from '@/app/context/supabaseClient';
 import { useAuth } from '@/app/context/useAuth';
 import { 
@@ -63,6 +64,8 @@ const DIETA_DETALLE_CATEGORIAS_VALIDAS = new Set([
   'lacteos',
   'otros',
 ]);
+
+const STORAGE_PUBLIC_URL = 'https://hthnkzwjotwqhvjgqhfv.supabase.co/storage/v1/object/public/perfiles/';
 
 function normalizeCategoriaForDietaDetalle(categoria?: string | null): string | null {
   if (!categoria) return null;
@@ -273,11 +276,17 @@ export function GestionDietas() {
       const pacienteIds = [...new Set(dietaData?.map(d => d.id_paciente) || [])];
       const { data: pacientesEnriquecidos } = await supabase
         .from('pacientes')
-        .select('id_paciente, nombre, apellido')
+        .select('id_paciente, nombre, apellido, foto_perfil')
         .in('id_paciente', pacienteIds);
 
       const pacientesMap = (pacientesEnriquecidos || []).reduce((acc: any, p: any) => {
+        let fotoUrl = p.foto_perfil;
+        if (fotoUrl && !fotoUrl.startsWith('http')) {
+          fotoUrl = `${STORAGE_PUBLIC_URL}${fotoUrl}`;
+        }
+
         acc[p.id_paciente] = p;
+        acc[p.id_paciente].foto_perfil = fotoUrl || null;
         return acc;
       }, {});
 
@@ -756,28 +765,29 @@ export function GestionDietas() {
         
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 px-2">
           <div>
-            <h1 className="text-3xl md:text-4xl font-[900] text-[#2E8B57] tracking-[4px] uppercase">
+            <h1 className="text-4xl md:text-5xl font-[900] text-[#2E8B57] tracking-[4px] uppercase">
               Gestión de Dietas
             </h1>
             <div className="w-16 h-1.5 bg-[#3CB371] rounded-full mt-2" />
           </div>
 
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="w-full md:w-auto bg-[#2E8B57] hover:bg-[#1A3026] text-white font-black py-6 px-8 rounded-2xl shadow-lg transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2">
-                <Plus className="h-5 w-5" />
-                Nueva Dieta
-              </Button>
-            </DialogTrigger>
+          <div className="flex flex-wrap items-center gap-2">
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="w-full md:w-auto bg-[#2E8B57] hover:bg-[#1A3026] text-white font-black py-6 px-8 rounded-2xl shadow-lg transition-all uppercase tracking-widest text-sm flex items-center justify-center gap-2">
+                  <Plus className="h-5 w-5" />
+                  Nueva Dieta
+                </Button>
+              </DialogTrigger>
 
             <DialogContent className="max-w-4xl max-h-[90vh] rounded-[2.5rem] border-2 border-[#D1E8D5] bg-white p-0 overflow-hidden">
               <div className="custom-dialog-scroll overflow-y-auto max-h-[90vh]">
                 <div className="p-6 md:p-10">
                   <DialogHeader>
-                    <DialogTitle className="text-2xl font-[900] text-[#2E8B57] uppercase tracking-[2px]">
+                    <DialogTitle className="text-3xl font-[900] text-[#2E8B57] uppercase tracking-[2px]">
                       {isEditing ? 'Editar Plan Nutricional' : 'Crear Plan Nutricional'}
                     </DialogTitle>
-                    <DialogDescription className="text-sm text-gray-500 mt-2">
+                    <DialogDescription className="text-base text-gray-500 mt-2">
                       {isEditing 
                         ? 'Modifica las comidas del día seleccionado para este paciente.' 
                         : 'Asigna un plan alimenticio personalizado seleccionando comidas de tu catálogo.'}
@@ -786,7 +796,7 @@ export function GestionDietas() {
 
                   <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-6 mt-8">
                     <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase text-gray-400 tracking-wider">Buscar Paciente</Label>
+                      <Label className="text-xs font-black uppercase text-gray-400 tracking-wider">Buscar Paciente</Label>
                       <div className="relative">
                         <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-[#2E8B57]" />
                         <Input
@@ -800,14 +810,14 @@ export function GestionDietas() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase text-gray-400 tracking-wider">Paciente Seleccionado</Label>
+                      <Label className="text-xs font-black uppercase text-gray-400 tracking-wider">Paciente Seleccionado</Label>
                       <Select value={selectedPaciente} onValueChange={setSelectedPaciente}>
                         <SelectTrigger className="border-2 border-[#D1E8D5] rounded-xl h-12">
                           <SelectValue placeholder="Selecciona o busca un paciente" />
                         </SelectTrigger>
                         <SelectContent className="rounded-xl max-h-60 overflow-y-auto custom-dialog-scroll">
                           {filteredPacientes.length === 0 && searchQuery ? (
-                            <div className="p-4 text-center text-gray-500 text-xs">
+                            <div className="p-4 text-center text-gray-500 text-sm">
                               No se encontraron pacientes
                             </div>
                           ) : (
@@ -815,7 +825,7 @@ export function GestionDietas() {
                               <SelectItem 
                                 key={p.id_paciente} 
                                 value={p.id_paciente.toString()} 
-                                className="font-bold text-xs uppercase py-3"
+                                className="font-bold text-sm uppercase py-3"
                               >
                                 {p.nombre} {p.apellido}
                               </SelectItem>
@@ -826,14 +836,14 @@ export function GestionDietas() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase text-gray-400 tracking-wider">Seleccionar Día</Label>
+                      <Label className="text-xs font-black uppercase text-gray-400 tracking-wider">Seleccionar Día</Label>
                       <Select value={selectedDia.toString()} onValueChange={(val) => setSelectedDia(parseInt(val))}>
                         <SelectTrigger className="border-2 border-[#D1E8D5] rounded-xl h-12">
                           <SelectValue placeholder="Elige un día" />
                         </SelectTrigger>
                         <SelectContent className="rounded-xl border-2 border-[#D1E8D5] custom-dialog-scroll">
                           {['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'].map((dia, idx) => (
-                            <SelectItem key={idx + 1} value={(idx + 1).toString()} className="font-bold text-xs uppercase">
+                            <SelectItem key={idx + 1} value={(idx + 1).toString()} className="font-bold text-sm uppercase">
                               {dia}
                             </SelectItem>
                           ))}
@@ -842,7 +852,7 @@ export function GestionDietas() {
                     </div>
 
                     <div className="space-y-6">
-                      <h3 className="text-sm font-[900] text-[#2E8B57] uppercase tracking-wider border-b-2 border-[#D1E8D5] pb-2">
+                      <h3 className="text-base font-[900] text-[#2E8B57] uppercase tracking-wider border-b-2 border-[#D1E8D5] pb-2">
                         Selecciona las comidas del día
                       </h3>
                       
@@ -850,7 +860,7 @@ export function GestionDietas() {
                         <div key={meal.key} className="space-y-4 p-5 border-2 border-[#D1E8D5] rounded-3xl bg-white shadow-sm">
                           <div className="flex items-center gap-2">
                             <meal.icon size={18} className={meal.color} />
-                            <Label className="text-sm font-black uppercase text-[#1A3026]">{meal.label}</Label>
+                            <Label className="text-base font-black uppercase text-[#1A3026]">{meal.label}</Label>
                           </div>
 
                           <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2">
@@ -863,7 +873,7 @@ export function GestionDietas() {
                               </SelectTrigger>
                               <SelectContent className="rounded-xl border-2 border-[#D1E8D5] custom-dialog-scroll max-h-60">
                                 {filteredAlimentos.length === 0 ? (
-                                  <div className="p-4 text-center text-gray-500 text-xs">
+                                  <div className="p-4 text-center text-gray-500 text-sm">
                                     No hay alimentos disponibles
                                   </div>
                                 ) : (
@@ -871,7 +881,7 @@ export function GestionDietas() {
                                     <SelectItem
                                       key={alimento.id_alimento}
                                       value={alimento.id_alimento.toString()}
-                                      className="font-bold text-xs py-3"
+                                      className="font-bold text-sm py-3"
                                     >
                                       {alimento.nombre} ({alimento.calorias_por_100g} kcal/100g)
                                     </SelectItem>
@@ -883,7 +893,7 @@ export function GestionDietas() {
                             <Button
                               type="button"
                               onClick={() => handleAddIngredient(meal.key)}
-                              className="bg-[#2E8B57] hover:bg-[#1A3026] text-white font-black text-[10px] uppercase rounded-xl h-12 px-5"
+                              className="bg-[#2E8B57] hover:bg-[#1A3026] text-white font-black text-xs uppercase rounded-xl h-12 px-5"
                             >
                               Agregar
                             </Button>
@@ -894,7 +904,7 @@ export function GestionDietas() {
                               {dietaData[meal.key].ingredientes.map((ingrediente) => (
                                 <div
                                   key={ingrediente.id_alimento}
-                                  className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#F0FFF4] border border-[#D1E8D5] text-xs font-bold text-[#1A3026]"
+                                  className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#F0FFF4] border border-[#D1E8D5] text-sm font-bold text-[#1A3026]"
                                 >
                                   <span>{ingrediente.nombre}</span>
                                   <button
@@ -922,7 +932,7 @@ export function GestionDietas() {
 
                           {!meal.label.includes('Colación') && (
                             <div className="space-y-1">
-                              <Label className="text-[10px] font-black uppercase text-gray-400 tracking-wider">Horario</Label>
+                              <Label className="text-xs font-black uppercase text-gray-400 tracking-wider">Horario</Label>
                               <Input 
                                 type="time" 
                                 value={dietaData[meal.key].horario || ''} 
@@ -932,7 +942,7 @@ export function GestionDietas() {
                             </div>
                           )}
 
-                          <div className="grid grid-cols-3 gap-2 text-xs text-gray-500 uppercase font-bold text-center">
+                          <div className="grid grid-cols-3 gap-2 text-sm text-gray-500 uppercase font-bold text-center">
                             <p className="flex items-center justify-center gap-1">
                               <Tag size={12} className="text-[#2E8B57]" /> 
                               {dietaData[meal.key].categoria || '-'}
@@ -955,14 +965,14 @@ export function GestionDietas() {
                         type="button"
                         variant="outline"
                         onClick={() => setIsDialogOpen(false)}
-                        className="flex-1 border-2 border-[#D1E8D5] text-gray-400 font-black text-[10px] uppercase rounded-xl h-14"
+                        className="flex-1 border-2 border-[#D1E8D5] text-gray-400 font-black text-xs uppercase rounded-xl h-14"
                       >
                         Descartar
                       </Button>
                       <Button
                         type="submit"
                         disabled={loading}
-                        className="flex-1 bg-[#2E8B57] hover:bg-[#1A3026] text-white font-black text-[10px] uppercase rounded-xl h-14"
+                        className="flex-1 bg-[#2E8B57] hover:bg-[#1A3026] text-white font-black text-xs uppercase rounded-xl h-14"
                       >
                         {loading ? 'Guardando...' : (isEditing ? 'Guardar Cambios' : 'Asignar Plan al Paciente')}
                       </Button>
@@ -987,7 +997,8 @@ export function GestionDietas() {
                 }
               `}</style>
             </DialogContent>
-          </Dialog>
+            </Dialog>
+          </div>
         </div>
 
         {/* Buscador Estilizado */}
@@ -997,7 +1008,7 @@ export function GestionDietas() {
             placeholder="BUSCAR PACIENTE POR NOMBRE O EMAIL..."
             value={searchQuery}
             onChange={handleSearch}
-            className="w-full pl-14 py-5 bg-white border-2 border-[#D1E8D5] rounded-2xl focus:border-[#2E8B57] outline-none text-[10px] font-black tracking-widest uppercase placeholder:text-gray-400 shadow-sm transition-all"
+            className="w-full pl-14 py-5 bg-white border-2 border-[#D1E8D5] rounded-2xl focus:border-[#2E8B57] outline-none text-sm font-black tracking-widest uppercase placeholder:text-gray-400 shadow-sm transition-all"
           />
         </div>
 
@@ -1011,7 +1022,7 @@ export function GestionDietas() {
                 toast.warning('No hay dietas para editar');
               }
             }}
-            className="bg-[#2E8B57] hover:bg-[#1A3026] text-white font-black py-4 px-6 rounded-xl text-xs uppercase tracking-widest flex items-center gap-2 shadow-lg"
+            className="bg-[#2E8B57] hover:bg-[#1A3026] text-white font-black py-4 px-6 rounded-xl text-sm uppercase tracking-widest flex items-center gap-2 shadow-lg"
           >
             <Edit className="h-4 w-4" />
             Editar Plan
@@ -1034,15 +1045,22 @@ export function GestionDietas() {
                   <AccordionItem value={dieta.id_dieta.toString()} key={dieta.id_dieta} className="border-b border-[#F0FFF4]">
                     <AccordionTrigger className="px-6 py-5 hover:no-underline hover:bg-[#F8FFF9] transition-colors">
                       <div className="flex items-center gap-4 w-full">
-                        <div className="h-12 w-12 bg-white rounded-2xl flex items-center justify-center border-2 border-[#D1E8D5]">
-                          <Utensils className="text-[#2E8B57]" size={20} />
-                        </div>
+                        <Avatar className="h-12 w-12 border-2 border-[#D1E8D5] rounded-2xl">
+                          <AvatarImage
+                            src={dieta.pacientes?.foto_perfil || ''}
+                            alt={`${dieta.pacientes?.nombre || ''} ${dieta.pacientes?.apellido || ''}`}
+                            className="object-cover"
+                          />
+                          <AvatarFallback className="bg-[#F0FFF4] text-[#2E8B57] font-black text-sm uppercase rounded-2xl">
+                            {`${dieta.pacientes?.nombre?.[0] || ''}${dieta.pacientes?.apellido?.[0] || ''}`.trim() || 'NA'}
+                          </AvatarFallback>
+                        </Avatar>
                         <div className="flex-grow text-left">
-                          <p className="font-black text-[#1A3026] uppercase text-xs tracking-tight">
+                          <p className="font-black text-[#1A3026] uppercase text-sm tracking-tight">
                             {dieta.pacientes.nombre} {dieta.pacientes.apellido}
                           </p>
-                          <p className="text-[10px] font-black text-[#3CB371] uppercase">{dieta.nombre_dieta}</p>
-                          <p className="text-[10px] text-gray-500">
+                          <p className="text-xs font-black text-[#3CB371] uppercase">{dieta.nombre_dieta}</p>
+                          <p className="text-xs text-gray-500">
                             Inicio: {new Date(dieta.fecha_inicio).toLocaleDateString('es-MX')}
                           </p>
                         </div>
@@ -1053,7 +1071,7 @@ export function GestionDietas() {
                               e.stopPropagation();
                               exportToPDF(dieta);
                             }}
-                            className="border-2 border-[#D1E8D5] text-[#2E8B57] font-black text-[10px] uppercase rounded-xl px-6 h-10 flex items-center gap-2"
+                            className="border-2 border-[#D1E8D5] text-[#2E8B57] font-black text-xs uppercase rounded-xl px-6 h-10 flex items-center gap-2"
                           >
                             <Download className="h-4 w-4" /> Exportar PDF
                           </Button>
@@ -1065,7 +1083,7 @@ export function GestionDietas() {
                               e.stopPropagation();
                               eliminarDieta(dieta.id_dieta, `${dieta.pacientes.nombre} ${dieta.pacientes.apellido}`);
                             }}
-                            className="border-2 border-[#FF4444] text-[#FF4444] font-black text-[10px] uppercase rounded-xl px-6 h-10 flex items-center gap-2 hover:bg-red-50"
+                            className="border-2 border-[#FF4444] text-[#FF4444] font-black text-xs uppercase rounded-xl px-6 h-10 flex items-center gap-2 hover:bg-red-50"
                           >
                             <Trash2 className="h-4 w-4" /> Eliminar
                           </Button>
@@ -1082,13 +1100,13 @@ export function GestionDietas() {
 
                             return (
                               <div key={diaNum} className="space-y-4">
-                                <h3 className="text-lg font-[900] text-[#2E8B57] uppercase tracking-wide">
+                                <h3 className="text-xl font-[900] text-[#2E8B57] uppercase tracking-wide">
                                   {diasSemana[diaNum]}
                                 </h3>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
                                   {detallesDia.map((detalle: any, idx: number) => (
                                     <div key={idx} className="p-5 rounded-2xl border-2 border-[#F0FFF4] bg-[#F8FFF9] shadow-sm hover:shadow-md transition-all">
-                                      <p className="font-[900] text-sm text-[#1A3026] uppercase mb-3 flex items-center gap-1">
+                                      <p className="font-[900] text-base text-[#1A3026] uppercase mb-3 flex items-center gap-1">
                                         {detalle.tipo_comida === 'Desayuno' && <Coffee size={14} className="text-amber-600" />}
                                         {detalle.tipo_comida === 'Colación 1' && <Apple size={14} className="text-green-600" />}
                                         {detalle.tipo_comida === 'Almuerzo' && <Sun size={14} className="text-orange-600" />}
@@ -1096,10 +1114,10 @@ export function GestionDietas() {
                                         {detalle.tipo_comida === 'Cena' && <Moon size={14} className="text-indigo-600" />}
                                         {detalle.tipo_comida}
                                       </p>
-                                      <p className="text-sm font-medium text-gray-700 mb-3">
+                                      <p className="text-base font-medium text-gray-700 mb-3">
                                         "{detalle.descripcion}"
                                       </p>
-                                      <div className="text-xs text-gray-500 space-y-1 uppercase font-bold text-center">
+                                      <div className="text-sm text-gray-500 space-y-1 uppercase font-bold text-center">
                                         {detalle.categoria && (
                                           <p className="flex items-center gap-1">
                                             <Tag size={12} className="text-[#2E8B57]" /> {detalle.categoria}
@@ -1140,7 +1158,7 @@ export function GestionDietas() {
         <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
           <DialogContent className="rounded-[2.5rem] border-2 border-[#D1E8D5] bg-white p-10 max-w-md text-center">
             <DialogHeader>
-              <DialogTitle className="text-2xl font-[900] text-[#FF4444] uppercase tracking-[2px] mb-6">
+              <DialogTitle className="text-3xl font-[900] text-[#FF4444] uppercase tracking-[2px] mb-6">
                 Eliminar Plan Nutricional
               </DialogTitle>
             </DialogHeader>

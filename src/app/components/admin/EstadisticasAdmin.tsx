@@ -88,7 +88,7 @@ function AnimatedLoadingScreen() {
         
         <div 
           ref={textRef}
-          className="text-[#2E8B57] font-bold text-2xl mb-6"
+          className="text-[#2E8B57] font-bold text-3xl mb-6"
         >
           Cargando estadísticas...
         </div>
@@ -353,12 +353,12 @@ export function EstadisticasAdmin() {
 
   if (errorMsg) {
     return (
-      <div className="p-10 text-center text-red-600 min-h-screen">
+      <div className="p-10 text-center text-red-600 text-lg md:text-xl min-h-screen">
         Error: {errorMsg}
         <br />
         <button 
           onClick={fetchStatistics}
-          className="mt-4 px-4 py-2 bg-[#2E8B57] text-white rounded hover:bg-[#256e45]"
+          className="mt-4 px-5 py-2.5 bg-[#2E8B57] text-white text-base md:text-lg rounded hover:bg-[#256e45]"
         >
           Reintentar
         </button>
@@ -371,8 +371,8 @@ export function EstadisticasAdmin() {
       {/* Header con selector de mes/año */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-200 pb-6">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">Panel de Control</h1>
-          <p className="text-muted-foreground mt-1 text-lg">Análisis de rendimiento y métricas del consultorio.</p>
+          <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-gray-900">Panel de Control</h1>
+          <p className="text-muted-foreground mt-1 text-xl">Análisis de rendimiento y métricas del consultorio.</p>
         </div>
         <div className="flex items-center gap-3 bg-white p-2 rounded-lg shadow-sm border">
           <Calendar className="h-5 w-5 text-gray-500" />
@@ -380,12 +380,12 @@ export function EstadisticasAdmin() {
             value={`${selectedMonth}`} 
             onValueChange={(val) => setSelectedMonth(Number(val))}
           >
-            <SelectTrigger className="w-[140px] border-none focus:ring-0">
+            <SelectTrigger className="w-[140px] border-none focus:ring-0 text-sm md:text-base">
               <SelectValue placeholder="Mes" />
             </SelectTrigger>
             <SelectContent>
               {months.map(m => (
-                <SelectItem key={m.value} value={m.value.toString()}>
+                <SelectItem key={m.value} value={m.value.toString()} className="text-sm md:text-base">
                   {m.label}
                 </SelectItem>
               ))}
@@ -395,12 +395,12 @@ export function EstadisticasAdmin() {
             value={`${selectedYear}`} 
             onValueChange={(val) => setSelectedYear(Number(val))}
           >
-            <SelectTrigger className="w-[120px] border-none focus:ring-0">
+            <SelectTrigger className="w-[120px] border-none focus:ring-0 text-sm md:text-base">
               <SelectValue placeholder="Año" />
             </SelectTrigger>
             <SelectContent>
               {years.map(y => (
-                <SelectItem key={y} value={y.toString()}>
+                <SelectItem key={y} value={y.toString()} className="text-sm md:text-base">
                   {y}
                 </SelectItem>
               ))}
@@ -419,14 +419,14 @@ export function EstadisticasAdmin() {
         ].map((item, i) => (
           <Card key={i} className="hover:shadow-md transition-shadow border-none shadow-sm outline outline-1 outline-gray-200">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-sm font-semibold text-gray-500 uppercase tracking-wider">{item.title}</CardTitle>
+              <CardTitle className="text-base md:text-lg font-semibold text-gray-500 uppercase tracking-wider">{item.title}</CardTitle>
               <div className={`p-2 rounded-md ${item.bg}`}>
                 <item.icon className={`h-5 w-5 ${item.color}`} />
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold tracking-tight">{item.value}</div>
-              <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
+              <div className="text-4xl font-bold tracking-tight">{item.value}</div>
+              <p className="text-sm md:text-base text-muted-foreground mt-2 flex items-center gap-1">
                 <ArrowUpRight className="h-3 w-3 text-emerald-500" />
                 {item.desc}
               </p>
@@ -439,15 +439,15 @@ export function EstadisticasAdmin() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <Card className="shadow-sm border-none ring-1 ring-gray-200">
           <CardHeader>
-            <CardTitle>Flujo de Pacientes</CardTitle>
-            <CardDescription>Volumen de visitas en los últimos 6 meses</CardDescription>
+            <CardTitle className="text-xl md:text-2xl">Flujo de Pacientes</CardTitle>
+            <CardDescription className="text-sm md:text-base">Volumen de visitas en los últimos 6 meses</CardDescription>
           </CardHeader>
           <CardContent className="h-[350px] pt-4">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={visitasPorMes}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                <XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
+                <XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 13}} dy={10} />
+                <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 13}} />
                 <Tooltip 
                   contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
                 />
@@ -459,15 +459,15 @@ export function EstadisticasAdmin() {
 
         <Card className="shadow-sm border-none ring-1 ring-gray-200">
           <CardHeader>
-            <CardTitle>Distribución de Ingresos</CardTitle>
-            <CardDescription>Ingresos mensuales por consultorio (MXN)</CardDescription>
+            <CardTitle className="text-xl md:text-2xl">Distribución de Ingresos</CardTitle>
+            <CardDescription className="text-sm md:text-base">Ingresos mensuales por consultorio (MXN)</CardDescription>
           </CardHeader>
           <CardContent className="h-[350px] pt-4">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={ingresosPorMes}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                <XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
+                <XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 13}} dy={10} />
+                <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 13}} />
                 <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
                 <Bar dataKey="ingresos" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
               </BarChart>
@@ -481,13 +481,13 @@ export function EstadisticasAdmin() {
         <CardHeader className="bg-white border-b">
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Rendimiento por Especialista</CardTitle>
-              <CardDescription>Métricas individuales de productividad y captación.</CardDescription>
+              <CardTitle className="text-xl md:text-2xl">Rendimiento por Especialista</CardTitle>
+              <CardDescription className="text-sm md:text-base">Métricas individuales de productividad y captación.</CardDescription>
             </div>
             <Button 
               onClick={exportarReporte}
               variant="outline"
-              className="border-[#2E8B57] text-[#2E8B57] hover:bg-[#F0FFF4] flex items-center gap-2"
+              className="border-[#2E8B57] text-[#2E8B57] hover:bg-[#F0FFF4] text-sm md:text-base flex items-center gap-2"
             >
               <Download size={16} />
               Exportar reporte
@@ -509,31 +509,31 @@ export function EstadisticasAdmin() {
                       />
                     </div>
                     <div>
-                      <h4 className="font-bold text-gray-900">{nutriologo.nombre} {nutriologo.apellido}</h4>
-                      <p className="text-sm text-muted-foreground">Nutrición Clínica</p>
+                      <h4 className="font-bold text-lg md:text-xl text-gray-900">{nutriologo.nombre} {nutriologo.apellido}</h4>
+                      <p className="text-base text-muted-foreground">Nutrición Clínica</p>
                     </div>
                   </div>
                 </div>
                 
                 <div className="grid grid-cols-3 gap-8 md:w-1/2">
                   <div className="text-center md:text-left">
-                    <p className="text-xs uppercase tracking-wider text-gray-400 font-bold mb-1">Pacientes</p>
-                    <p className="text-xl font-bold text-emerald-600">{nutriologo.pacientes}</p>
+                    <p className="text-sm uppercase tracking-wider text-gray-400 font-bold mb-1">Pacientes</p>
+                    <p className="text-2xl font-bold text-emerald-600">{nutriologo.pacientes}</p>
                   </div>
                   <div className="text-center md:text-left">
-                    <p className="text-xs uppercase tracking-wider text-gray-400 font-bold mb-1">Citas</p>
-                    <p className="text-xl font-bold text-blue-600">{nutriologo.citas}</p>
+                    <p className="text-sm uppercase tracking-wider text-gray-400 font-bold mb-1">Citas</p>
+                    <p className="text-2xl font-bold text-blue-600">{nutriologo.citas}</p>
                   </div>
                   <div className="text-center md:text-left">
-                    <p className="text-xs uppercase tracking-wider text-gray-400 font-bold mb-1">Ingresos</p>
-                    <p className="text-xl font-bold text-amber-600">${nutriologo.ingresos.toLocaleString('es-MX')}</p>
+                    <p className="text-sm uppercase tracking-wider text-gray-400 font-bold mb-1">Ingresos</p>
+                    <p className="text-2xl font-bold text-amber-600">${nutriologo.ingresos.toLocaleString('es-MX')}</p>
                   </div>
                 </div>
               </div>
             ))}
 
             {rendimientoNutriologos.length === 0 && (
-              <div className="p-12 text-center text-gray-500">
+              <div className="p-12 text-center text-base md:text-lg text-gray-500">
                 No hay nutriólogos registrados aún
               </div>
             )}

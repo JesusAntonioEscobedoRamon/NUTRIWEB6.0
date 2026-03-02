@@ -285,12 +285,12 @@ export function Perfil() {
         <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
           <div>
             <div className="inline-flex flex-col items-start">
-              <h1 className="text-4xl font-[900] text-[#2E8B57] tracking-[4px] uppercase">Mi Perfil</h1>
+              <h1 className="text-4xl md:text-5xl font-[900] text-[#2E8B57] tracking-[4px] uppercase">Mi Perfil</h1>
               <div className="w-16 h-1.5 bg-[#3CB371] rounded-full mt-2" />
             </div>
             {isEditing && hasChanges && (
-              <p className="text-orange-500 text-[10px] font-black mt-4 uppercase tracking-[2px] animate-pulse">
-                ⚠️ Hay cambios sin guardar en tu perfil
+              <p className="text-orange-500 text-xs md:text-sm font-black mt-4 uppercase tracking-[2px] animate-pulse">
+                 Hay cambios sin guardar en tu perfil
               </p>
             )}
           </div>
@@ -298,7 +298,7 @@ export function Perfil() {
           {!isEditing && (
             <button 
               onClick={() => setIsEditing(true)}
-              className="flex items-center gap-2 px-8 py-4 bg-white border-2 border-[#D1E8D5] text-[#2E8B57] font-black text-xs uppercase tracking-widest rounded-2xl hover:bg-[#F0FFF4] transition-all"
+              className="flex items-center gap-2 px-8 py-4 bg-white border-2 border-[#D1E8D5] text-[#2E8B57] font-black text-sm md:text-base uppercase tracking-widest rounded-2xl hover:bg-[#F0FFF4] transition-all"
             >
               <Edit size={16} />
               Editar Información
@@ -313,9 +313,14 @@ export function Perfil() {
               <div className="relative inline-block mb-6">
                 <div className="w-32 h-32 rounded-full border-4 border-[#F0FFF4] overflow-hidden bg-gray-100 flex items-center justify-center">
                   {previewImage ? (
-                    <img src={previewImage} alt="Perfil" className="w-full h-full object-cover" />
+                    <img
+                      src={previewImage}
+                      alt="Perfil"
+                      onError={() => setPreviewImage(null)}
+                      className="w-full h-full object-cover"
+                    />
                   ) : (
-                    <User size={60} className="text-[#D1E8D5]" />
+                    <span className="text-[#9FB7A7] font-medium text-lg leading-none">Perfil</span>
                   )}
                 </div>
                 {isEditing && (
@@ -330,14 +335,14 @@ export function Perfil() {
                 )}
                 <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
               </div>
-              <h3 className="text-2xl font-black text-[#1A3026] uppercase leading-tight">
+              <h3 className="text-3xl md:text-4xl font-black text-[#1A3026] uppercase leading-tight">
                 {formData.nombre} {formData.apellido}
               </h3>
-              <p className="text-[#3CB371] font-bold text-sm mb-4">@{formData.nombreUsuario}</p>
+              <p className="text-[#3CB371] font-bold text-base md:text-lg mb-4">@{formData.nombreUsuario}</p>
               
               <div className="bg-[#f8fcf9] p-4 rounded-2xl border border-dashed border-[#D1E8D5]">
-                <p className="text-[9px] font-black text-gray-400 uppercase mb-1">Email de acceso</p>
-                <p className="text-sm text-[#1A3026] font-medium">{user?.email}</p>
+                <p className="text-[10px] md:text-xs font-black text-gray-400 uppercase mb-1">Email de acceso</p>
+                <p className="text-base md:text-lg text-[#1A3026] font-medium">{user?.email}</p>
               </div>
             </div>
           </div>
@@ -349,40 +354,40 @@ export function Perfil() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   
                   <div>
-                    <label className="text-[10px] font-black uppercase text-gray-500 ml-1">Nombre</label>
+                    <label className="text-xs md:text-sm font-black uppercase text-gray-500 ml-1">Nombre</label>
                     <input
                       disabled={!isEditing}
                       value={formData.nombre}
                       onChange={(e) => setFormData({...formData, nombre: e.target.value})}
-                      className="w-full mt-2 p-4 bg-white border-2 border-[#D1E8D5] rounded-2xl focus:border-[#2E8B57] outline-none disabled:opacity-50"
+                      className="w-full mt-2 p-4 text-sm md:text-base bg-white border-2 border-[#D1E8D5] rounded-2xl focus:border-[#2E8B57] outline-none disabled:opacity-50"
                     />
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-black uppercase text-gray-500 ml-1">Apellido</label>
+                    <label className="text-xs md:text-sm font-black uppercase text-gray-500 ml-1">Apellido</label>
                     <input
                       disabled={!isEditing}
                       value={formData.apellido}
                       onChange={(e) => setFormData({...formData, apellido: e.target.value})}
-                      className="w-full mt-2 p-4 bg-white border-2 border-[#D1E8D5] rounded-2xl focus:border-[#2E8B57] outline-none disabled:opacity-50"
+                      className="w-full mt-2 p-4 text-sm md:text-base bg-white border-2 border-[#D1E8D5] rounded-2xl focus:border-[#2E8B57] outline-none disabled:opacity-50"
                     />
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-black uppercase text-gray-500 ml-1">Nombre de Usuario</label>
+                    <label className="text-xs md:text-sm font-black uppercase text-gray-500 ml-1">Nombre de Usuario</label>
                     <div className="relative">
                       <AtSign className="absolute left-4 top-1/2 -translate-y-1/2 text-[#2E8B57]" size={18} />
                       <input
                         disabled={!isEditing}
                         value={formData.nombreUsuario}
                         onChange={(e) => setFormData({...formData, nombreUsuario: e.target.value})}
-                        className="w-full mt-2 pl-12 pr-4 py-4 bg-white border-2 border-[#D1E8D5] rounded-2xl focus:border-[#2E8B57] outline-none disabled:opacity-50"
+                        className="w-full mt-2 pl-12 pr-4 py-4 text-sm md:text-base bg-white border-2 border-[#D1E8D5] rounded-2xl focus:border-[#2E8B57] outline-none disabled:opacity-50"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-black uppercase text-gray-500 ml-1">Tarifa (MXN)</label>
+                    <label className="text-xs md:text-sm font-black uppercase text-gray-500 ml-1">Tarifa (MXN)</label>
                     <div className="relative">
                       <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 text-[#2E8B57]" size={18} />
                       <input
@@ -395,7 +400,7 @@ export function Perfil() {
                           setFormData({...formData, tarifa: numValue});
                         }}
                         placeholder="Ej: 1,500"
-                        className="w-full mt-2 pl-12 pr-4 py-4 bg-white border-2 border-[#D1E8D5] rounded-2xl focus:border-[#2E8B57] outline-none disabled:opacity-50 font-medium"
+                        className="w-full mt-2 pl-12 pr-4 py-4 text-sm md:text-base bg-white border-2 border-[#D1E8D5] rounded-2xl focus:border-[#2E8B57] outline-none disabled:opacity-50 font-medium"
                       />
                     </div>
                   </div>
@@ -403,14 +408,14 @@ export function Perfil() {
 
                 {/* SI SE SUBIO XD */}
                 <div>
-                  <label className="text-[10px] font-black uppercase text-gray-500 ml-1">Descripción Profesional</label>
+                  <label className="text-xs md:text-sm font-black uppercase text-gray-500 ml-1">Descripción Profesional</label>
                   <textarea
                     disabled={!isEditing}
                     rows={4}
                     value={formData.descripcion}
                     onChange={(e) => setFormData({...formData, descripcion: e.target.value})}
                     placeholder="Escribe tu trayectoria o especialidad..."
-                    className="w-full mt-2 p-4 bg-white border-2 border-[#D1E8D5] rounded-2xl focus:border-[#2E8B57] outline-none disabled:opacity-50 resize-none"
+                    className="w-full mt-2 p-4 text-sm md:text-base bg-white border-2 border-[#D1E8D5] rounded-2xl focus:border-[#2E8B57] outline-none disabled:opacity-50 resize-none"
                   />
                 </div>
 
@@ -419,13 +424,13 @@ export function Perfil() {
                     <button
                       type="button"
                       onClick={handleCancel}
-                      className="px-8 py-4 text-red-500 font-black text-xs uppercase tracking-widest hover:bg-red-50 rounded-2xl transition-all"
+                      className="px-8 py-4 text-red-500 font-black text-sm md:text-base uppercase tracking-widest hover:bg-red-50 rounded-2xl transition-all"
                     >
                       <X size={16} className="inline mr-2" /> Descartar
                     </button>
                     <button
                       type="submit"
-                      className="px-8 py-4 bg-[#2E8B57] text-white font-black text-xs uppercase tracking-widest rounded-2xl hover:bg-[#1A3026] shadow-lg transition-all"
+                      className="px-8 py-4 bg-[#2E8B57] text-white font-black text-sm md:text-base uppercase tracking-widest rounded-2xl hover:bg-[#1A3026] shadow-lg transition-all"
                     >
                       <Check size={16} className="inline mr-2" /> Guardar Cambios
                     </button>

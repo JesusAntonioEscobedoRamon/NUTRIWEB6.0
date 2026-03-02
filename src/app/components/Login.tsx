@@ -176,11 +176,12 @@ export function Login() {
       <div className={`w-full max-w-lg bg-white/95 backdrop-blur-2xl rounded-[3rem] shadow-[0_40px_100px_rgba(27,67,50,0.25)] border-2 border-[#D1E8D5] overflow-hidden z-10 relative 
         ${isExiting ? 'animate-exit-scale' : 'animate-enter-up'}`}>
         
-        {/* Header - Respetando NUTRI U original */}
+        {/* Header */}
         <div className="px-12 pt-16 pb-8 text-center">
           <div className="inline-flex flex-col items-center">
-            <h1 className="text-5xl font-[900] text-[#1B4332] tracking-[5px] mb-1">NUTRI U</h1>
-            <div className="w-16 h-2 bg-[#2D6A4F] rounded-full" />
+            <div className="h-24 overflow-hidden flex items-center justify-center mb-1">
+              <img src="/assets/logo.png" alt="Logo Nutri U" className="h-full w-auto object-contain" />
+            </div>
           </div>
           <p className="text-[#6B7280] text-[13px] font-black mt-8 uppercase tracking-[4px] opacity-60">
             Panel de Acceso Profesional
@@ -257,8 +258,8 @@ export function Login() {
             </button>
           </form>
 
-          <div className="flex justify-center mt-12 italic opacity-40">
-            <p className="text-[10px] text-[#A0AEC0] font-black tracking-[5px] uppercase">
+          <div className="flex justify-center mt-12 italic">
+            <p className="text-[12px] text-[#6B7280] font-black tracking-[4px] uppercase opacity-90">
               Nutri U • v1.0 • Secure Access
             </p>
           </div>

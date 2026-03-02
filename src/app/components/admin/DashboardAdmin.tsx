@@ -224,10 +224,10 @@ export function DashboardAdmin() {
       <div className="max-w-7xl mx-auto space-y-10">
         {/* Encabezado */}
         <div className="px-2">
-          <h1 className="text-3xl md:text-4xl font-[900] text-[#1A3026] tracking-[4px] uppercase leading-none">
+          <h1 className="text-4xl md:text-5xl font-[900] text-[#1A3026] tracking-[4px] uppercase leading-none">
             Dashboard <span className="text-[#2E8B57]">Admin</span>
           </h1>
-          <p className="text-[#3CB371] font-bold text-sm mt-4 uppercase tracking-[2px]">
+          <p className="text-[#3CB371] font-bold text-base md:text-lg mt-4 uppercase tracking-[2px]">
             Vista general del consultorio NUTRI U
           </p>
         </div>
@@ -244,7 +244,7 @@ export function DashboardAdmin() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <Card className="rounded-[2.5rem] border-2 border-[#D1E8D5] overflow-hidden bg-white shadow-sm">
             <CardHeader className="bg-[#F8FFF9] border-b border-[#F0FFF4] p-8">
-              <CardTitle className="text-xs font-[900] text-[#1A3026] uppercase tracking-[2px] flex items-center gap-2">
+              <CardTitle className="text-sm md:text-base font-[900] text-[#1A3026] uppercase tracking-[2px] flex items-center gap-2">
                 <Activity size={18} className="text-[#2E8B57]" /> Volumen de Citas
               </CardTitle>
             </CardHeader>
@@ -252,7 +252,7 @@ export function DashboardAdmin() {
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={citasPorDia}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F0FFF4" />
-                  <XAxis dataKey="dia" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} />
+                  <XAxis dataKey="dia" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 700 }} />
                   <YAxis hide />
                   <Tooltip cursor={{ fill: '#F8FFF9' }} contentStyle={{ borderRadius: '15px', border: '2px solid #D1E8D5', fontWeight: 'bold' }} />
                   <Bar dataKey="citas" radius={[10, 10, 10, 10]} barSize={35}>
@@ -267,7 +267,7 @@ export function DashboardAdmin() {
 
           <Card className="rounded-[2.5rem] border-2 border-[#D1E8D5] overflow-hidden bg-white shadow-sm">
             <CardHeader className="bg-[#F8FFF9] border-b border-[#F0FFF4] p-8">
-              <CardTitle className="text-xs font-[900] text-[#1A3026] uppercase tracking-[2px] flex items-center gap-2">
+              <CardTitle className="text-sm md:text-base font-[900] text-[#1A3026] uppercase tracking-[2px] flex items-center gap-2">
                 <TrendingUp size={18} className="text-blue-600" /> Rendimiento Semanal
               </CardTitle>
             </CardHeader>
@@ -275,7 +275,7 @@ export function DashboardAdmin() {
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={ingresosPorSemana}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F0FFF4" />
-                  <XAxis dataKey="semana" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} />
+                  <XAxis dataKey="semana" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 700 }} />
                   <YAxis hide />
                   <Tooltip contentStyle={{ borderRadius: '15px', border: '2px solid #D1E8D5', fontWeight: 'bold' }} />
                   <Line type="monotone" dataKey="ingresos" stroke="#2563eb" strokeWidth={4} dot={{ r: 6, fill: '#2563eb', strokeWidth: 3, stroke: '#fff' }} activeDot={{ r: 8 }} />
@@ -288,7 +288,7 @@ export function DashboardAdmin() {
         {/* Tabla Actividad Reciente */}
         <Card className="rounded-[2.5rem] border-2 border-[#D1E8D5] overflow-hidden bg-white shadow-sm">
           <CardHeader className="bg-[#F8FFF9] border-b border-[#F0FFF4] p-8 flex flex-row items-center justify-between">
-            <CardTitle className="text-xs font-[900] text-[#1A3026] uppercase tracking-[2px]">
+            <CardTitle className="text-sm md:text-base font-[900] text-[#1A3026] uppercase tracking-[2px]">
               Actividad Reciente
             </CardTitle>
             <ArrowUpRight className="text-[#3CB371]" size={20} />
@@ -310,16 +310,16 @@ export function DashboardAdmin() {
                         <Users className="h-5 w-5 text-[#2E8B57]" />
                       </div>
                       <div>
-                        <p className="font-[900] text-[#1A3026] uppercase text-[11px] tracking-wide">
+                        <p className="font-[900] text-[#1A3026] uppercase text-sm md:text-base tracking-wide">
                           {cita.pacientes?.nombre} {cita.pacientes?.apellido}
                         </p>
-                        <p className="text-[10px] font-bold text-gray-400 uppercase mt-0.5">
+                        <p className="text-xs md:text-sm font-bold text-gray-400 uppercase mt-0.5">
                           {new Date(cita.fecha_hora).toLocaleDateString('es-MX')} • {new Date(cita.fecha_hora).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
                         </p>
                       </div>
                     </div>
                     <div className="text-right">
-                      <span className={`px-4 py-1.5 text-[9px] font-[900] uppercase rounded-xl border-2 tracking-widest ${
+                      <span className={`px-4 py-1.5 text-[10px] md:text-xs font-[900] uppercase rounded-xl border-2 tracking-widest ${
                         cita.estado === 'completada' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
                         cita.estado === 'confirmada' ? 'bg-blue-50 text-blue-600 border-blue-100' :
                         cita.estado === 'pendiente' ? 'bg-yellow-50 text-yellow-600 border-yellow-100' :
@@ -350,9 +350,9 @@ function StatCard({ title, value, sub, icon, color }) {
           </div>
         </div>
         <div>
-          <p className="text-[10px] font-[900] text-gray-400 uppercase tracking-widest mb-1">{title}</p>
-          <p className="text-3xl font-[900] text-[#1A3026] tracking-tight">{value}</p>
-          <p className="text-[10px] font-bold text-[#3CB371] mt-2 uppercase">{sub}</p>
+          <p className="text-xs md:text-sm font-[900] text-gray-400 uppercase tracking-widest mb-1">{title}</p>
+          <p className="text-4xl font-[900] text-[#1A3026] tracking-tight">{value}</p>
+          <p className="text-xs md:text-sm font-bold text-[#3CB371] mt-2 uppercase">{sub}</p>
         </div>
       </CardContent>
     </Card>

@@ -137,15 +137,9 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
         
         {/* Logo Section */}
         <div className="p-8 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-12 w-12 bg-[#2E8B57] rounded-2xl flex items-center justify-center shadow-lg shadow-green-100">
-              <Leaf className="h-6 w-6 text-white" />
-            </div>
-            <div>
-              <h2 className="font-[900] text-[#1A3026] text-2xl uppercase tracking-[-1px] leading-none">
-                NUTRI <span className="text-[#3CB371]">U</span>
-              </h2>
-              <p className="text-[9px] font-black text-gray-400 uppercase tracking-[3px] mt-1">{user?.rol}</p>
+          <div className="flex flex-col items-start">
+            <div className="h-20 rounded-2xl overflow-hidden flex items-center justify-center">
+              <img src="/assets/logo.png" alt="Logo Nutri U" className="h-full w-auto object-contain" />
             </div>
           </div>
           <button className="lg:hidden p-2 text-gray-400" onClick={() => setIsMobileMenuOpen(false)}>
@@ -155,7 +149,7 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
 
         {/* Navegación */}
         <nav className="flex-1 px-4 space-y-2 overflow-y-auto custom-scrollbar">
-          <p className="px-4 text-[9px] font-black text-gray-400 uppercase tracking-[2px] mb-4">Menú Principal</p>
+          <p className="px-4 text-xs font-black text-gray-400 uppercase tracking-[2px] mb-4">Menú Principal</p>
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -170,7 +164,7 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
                 }`}
               >
                 <Icon className={`h-5 w-5 ${isActive ? 'text-white' : 'group-hover:scale-110 transition-transform'}`} />
-                <span className="text-[11px] font-[900] uppercase tracking-wider">{item.label}</span>
+                <span className="text-sm font-[900] uppercase tracking-wider">{item.label}</span>
               </button>
             );
           })}
@@ -190,18 +184,18 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
                   />
                 </div>
               ) : (
-                <div className="h-10 w-10 rounded-xl bg-white border border-[#D1E8D5] flex items-center justify-center font-black text-[#2E8B57] text-xs">
+                <div className="h-10 w-10 rounded-xl bg-white border border-[#D1E8D5] flex items-center justify-center font-black text-[#2E8B57] text-sm">
                   {user?.nombre?.[0]}{user?.apellido?.[0] || '?'}
                 </div>
               )}
               <div className="overflow-hidden">
-                <p className="font-black text-[#1A3026] text-[11px] uppercase truncate">
+                <p className="font-black text-[#1A3026] text-sm uppercase truncate">
                   {user?.nombre} {user?.apellido}
                 </p>
-                <p className="text-[9px] font-bold text-gray-400 truncate">{user?.email}</p>
+                <p className="text-xs font-bold text-gray-400 truncate">{user?.email}</p>
               </div>
             </div>
-            <Button onClick={handleLogout} variant="outline" className="w-full bg-white border-2 border-red-50 text-red-400 hover:bg-red-50 hover:text-red-600 font-black text-[10px] uppercase h-12 rounded-xl">
+            <Button onClick={handleLogout} variant="outline" className="w-full bg-white border-2 border-red-50 text-red-400 hover:bg-red-50 hover:text-red-600 font-black text-sm uppercase h-12 rounded-xl">
               <LogOut className="h-4 w-4 mr-2" /> Cerrar Sesión
             </Button>
           </div>
@@ -221,9 +215,8 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
            </button>
            
            <div className="flex flex-col items-center">
-              <div className="flex items-center gap-1">
-                <Leaf className="text-[#2E8B57]" size={16} />
-                <span className="font-[900] text-lg uppercase tracking-tight">NUTRI U</span>
+              <div className="h-12 overflow-hidden flex items-center justify-center">
+                <img src="/assets/logo.png" alt="Logo Nutri U" className="h-full w-auto object-contain" />
               </div>
               <div className="w-8 h-1 bg-[#3CB371] rounded-full" />
            </div>
@@ -250,24 +243,24 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
               <div className="h-10 w-10 rounded-xl bg-[#FDF4E8] text-[#D97706] flex items-center justify-center">
                 <AlertTriangle size={20} />
               </div>
-              <AlertDialogTitle className="text-[#1A3026] uppercase text-sm font-black tracking-wider">
+              <AlertDialogTitle className="text-[#1A3026] uppercase text-lg font-black tracking-wider">
                 Cambios sin guardar
               </AlertDialogTitle>
             </div>
-            <AlertDialogDescription className="text-[#4B5563] text-sm pt-2">
+            <AlertDialogDescription className="text-[#4B5563] text-base pt-2">
               Tienes información pendiente. Si sales ahora, perderás los cambios no guardados.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel
               onClick={handleCancelPendingChanges}
-              className="rounded-xl border-2 border-[#D1E8D5] text-[#1A3026] font-black text-[11px] uppercase"
+              className="rounded-xl border-2 border-[#D1E8D5] text-[#1A3026] font-black text-sm uppercase"
             >
               Quedarme aquí
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleConfirmPendingChanges}
-              className="rounded-xl bg-[#2E8B57] hover:bg-[#1A3026] text-white font-black text-[11px] uppercase"
+              className="rounded-xl bg-[#2E8B57] hover:bg-[#1A3026] text-white font-black text-sm uppercase"
             >
               Salir sin guardar
             </AlertDialogAction>
