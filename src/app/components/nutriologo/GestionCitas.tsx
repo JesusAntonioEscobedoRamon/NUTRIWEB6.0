@@ -947,7 +947,7 @@ export function GestionCitas() {
           </CardContent>
         </Card>
 
-        {/* Historial de citas */}
+        {/* SE SUBIUO LOS CAMBIOSSS */}
         <Card className="rounded-[2.5rem] border-2 border-[#D1E8D5] shadow-sm overflow-hidden bg-white">
           <CardHeader className="p-8 border-b border-[#F0FFF4] bg-[#F8FFF9]/50">
             <div className="flex items-center justify-between">
