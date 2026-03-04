@@ -1473,3 +1473,5 @@ function groupByDay(detalles: any[]) {
   });
   return groups;
 }
+
+//Listo

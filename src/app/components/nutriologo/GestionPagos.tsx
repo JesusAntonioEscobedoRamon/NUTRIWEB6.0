@@ -131,33 +131,81 @@ export function GestionPagos() {
       try {
         const nutriologoId = Number(user.nutriologoId);
 
+        const { data: relacionesActivas, error: errRelacionesActivas } = await supabase
+          .from('paciente_nutriologo')
+          .select('*')
+          .eq('id_nutriologo', nutriologoId)
+          .eq('activo', true);
+
+        if (errRelacionesActivas) throw errRelacionesActivas;
+
+        const pacienteIdsActivos = (relacionesActivas || []).map((rel: any) => rel.id_paciente);
+
+        if (!pacienteIdsActivos.length) {
+          setCitas([]);
+          setFilteredCitas([]);
+          setIngresosTotales(0);
+          setPendientesCobro(0);
+          setCitasEsteMes(0);
+          return;
+        }
+
+        const { data: pacientesActivos, error: errPacientesActivos } = await supabase
+          .from('pacientes')
+          .select('id_paciente, correo, foto_perfil')
+          .in('id_paciente', pacienteIdsActivos);
+
+        if (errPacientesActivos) throw errPacientesActivos;
+
+        const activePatientsByEmail = new Map<string, any>();
+        const activeSinceByPacienteId = new Map<number, string>();
+
+        (relacionesActivas || []).forEach((rel: any) => {
+          const relPacienteId = Number(rel.id_paciente);
+          const activeSince = rel.updated_at || rel.fecha_asignacion || rel.created_at || null;
+          if (activeSince) {
+            activeSinceByPacienteId.set(relPacienteId, activeSince);
+          }
+        });
+
+        (pacientesActivos || []).forEach((paciente: any) => {
+          const correo = (paciente.correo || '').toLowerCase();
+          if (!correo) return;
+
+          activePatientsByEmail.set(correo, {
+            ...paciente,
+            activeSince: activeSinceByPacienteId.get(Number(paciente.id_paciente)) || null
+          });
+        });
+
         const { data: citasData, error: errCitas } = await supabase
           .rpc('get_pagados_nutriologo', { p_nutriologo_id: nutriologoId });
 
         if (errCitas) throw errCitas;
 
-        const correosPacientes = [...new Set((citasData || [])
-          .map((c: any) => c.paciente_correo)
-          .filter(Boolean))];
+        const citasActivas = (citasData || []).filter((c: any) => {
+          const correo = (c.paciente_correo || '').toLowerCase();
+          if (!correo) return false;
 
-        let fotoPerfilPorCorreo: Record<string, string> = {};
-        if (correosPacientes.length > 0) {
-          const { data: pacientesFotos } = await supabase
-            .from('pacientes')
-            .select('correo, foto_perfil')
-            .in('correo', correosPacientes);
+          const pacienteActivo = activePatientsByEmail.get(correo);
+          if (!pacienteActivo) return false;
 
-          fotoPerfilPorCorreo = (pacientesFotos || []).reduce((acc: Record<string, string>, p: any) => {
-            if (p?.correo && p?.foto_perfil) {
-              acc[p.correo] = p.foto_perfil;
-            }
-            return acc;
-          }, {});
-        }
+          if (!pacienteActivo.activeSince) return true;
 
-        const citasFormateadas = citasData?.map(c => ({
+          const fechaCita = new Date(c.fecha_hora);
+          const fechaRelacion = new Date(pacienteActivo.activeSince);
+
+          if (Number.isNaN(fechaCita.getTime()) || Number.isNaN(fechaRelacion.getTime())) {
+            return true;
+          }
+
+          return fechaCita >= fechaRelacion;
+        });
+
+        const citasFormateadas = citasActivas.map(c => ({
           foto_perfil: (() => {
-            const fotoRaw = c.paciente_foto_perfil || fotoPerfilPorCorreo[c.paciente_correo] || null;
+            const correo = (c.paciente_correo || '').toLowerCase();
+            const fotoRaw = c.paciente_foto_perfil || activePatientsByEmail.get(correo)?.foto_perfil || null;
             if (!fotoRaw) return null;
             return fotoRaw.startsWith('http') ? fotoRaw : `${STORAGE_PUBLIC_URL}${fotoRaw}`;
           })(),
@@ -173,7 +221,7 @@ export function GestionPagos() {
           },
           pagada: c.pago_estado === 'completado',
           monto: Number(c.pago_monto || 0)
-        })) || [];
+        }));
 
         setCitas(citasFormateadas);
         setFilteredCitas(citasFormateadas);
@@ -227,6 +275,7 @@ export function GestionPagos() {
     const grisOscuro = [26, 48, 38];           // #1A3026 (texto principal)
     const grisMedio = [75, 85, 99];            // #4B5563 (subtítulos)
 
+<<<<<<< HEAD
     // Header con fondo verde claro y logo
     doc.setFillColor(...verdeClaro);
     doc.rect(0, 0, 210, 50, 'F');
@@ -246,11 +295,19 @@ export function GestionPagos() {
     // Título del recibo
     doc.setFontSize(24);
     doc.setTextColor(...verdePrincipal);
+=======
+    // Header
+    doc.setFillColor(verde[0], verde[1], verde[2]);
+    doc.rect(0, 0, 210, 40, 'F');
+    doc.setFontSize(22);
+    doc.setTextColor(255);
+>>>>>>> aae5ee8c31175ff24da8ee04daf680452f26f2c8
     doc.setFont('helvetica', 'bold');
     doc.text('RECIBO DE PAGO', 105, 55, { align: 'center' });
 
     // Subtítulo
     doc.setFontSize(12);
+<<<<<<< HEAD
     doc.setTextColor(...grisMedio);
     doc.text('NutriU - Nutrición Personalizada', 105, 62, { align: 'center' });
 
@@ -258,6 +315,14 @@ export function GestionPagos() {
     doc.setFontSize(11);
     doc.setTextColor(...grisOscuro);
     let y = 80;
+=======
+    doc.setTextColor(grisOscuro[0], grisOscuro[1], grisOscuro[2]);
+    let y = 55;
+    doc.text(`Nutriólogo: ${user?.nombre || 'Jose C'}`, 20, y); y += 8;
+    doc.text(`Paciente: ${cita.paciente.nombre} ${cita.paciente.apellido}`, 20, y); y += 8;
+    doc.text(`Email: ${cita.paciente.email}`, 20, y); y += 8;
+    doc.text(`Fecha y Hora: ${cita.fecha} ${cita.hora}`, 20, y); y += 12;
+>>>>>>> aae5ee8c31175ff24da8ee04daf680452f26f2c8
 
     doc.setFont('helvetica', 'bold');
     doc.text('Nutriólogo:', 20, y);

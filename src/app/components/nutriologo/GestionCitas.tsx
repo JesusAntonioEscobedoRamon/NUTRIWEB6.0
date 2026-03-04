@@ -15,7 +15,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/app/components/ui/avatar'
 import { DateTime } from 'luxon'; // ← Nueva importación
 import { es } from 'date-fns/locale';
 
-const SONORA_TIMEZONE = 'America/Hermosillo';
+const SONORA_TIMEZONE = 'America/Phoenix'; // San Luis Río Colorado, Sonora
 const STORAGE_PUBLIC_URL = 'https://hthnkzwjotwqhvjgqhfv.supabase.co/storage/v1/object/public/perfiles/';
 const WORK_START_HOUR = 8;
 const WORK_END_HOUR = 17;
@@ -127,7 +127,7 @@ export function GestionCitas() {
   const maxYear = Math.max(currentYear, 2027);
   const minDate = `${minYear}-01-01`;
   const maxDate = `${maxYear}-12-31`;
-  const todayIso = new Date().toISOString().split('T')[0];
+  const todayIso = DateTime.now().setZone(SONORA_TIMEZONE).toFormat('yyyy-LL-dd');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDateModalOpen, setIsDateModalOpen] = useState(false);
   const [selectedPaciente, setSelectedPaciente] = useState('');
@@ -159,17 +159,27 @@ export function GestionCitas() {
         // 1. Pacientes asignados + foto_perfil
         const { data: relaciones, error: errRel } = await supabase
           .from('paciente_nutriologo')
-          .select('id_paciente')
+          .select('*')
           .eq('id_nutriologo', nutriologoId)
           .eq('activo', true);
 
         if (errRel) throw errRel;
 
         const pacienteIds = relaciones?.map(r => r.id_paciente) || [];
+        const activeSinceByPaciente = new Map<number, string>();
+
+        (relaciones || []).forEach((rel: any) => {
+          const relPacienteId = Number(rel.id_paciente);
+          const activeSince = rel.updated_at || rel.fecha_asignacion || rel.created_at || null;
+          if (activeSince) {
+            activeSinceByPaciente.set(relPacienteId, activeSince);
+          }
+        });
 
         if (pacienteIds.length === 0) {
           setPacientes([]);
           setFilteredPacientes([]);
+          setCitas([]);
         } else {
           const { data: pacientesData, error: errPac } = await supabase
             .from('pacientes')
@@ -202,14 +212,27 @@ export function GestionCitas() {
             pagos!left (monto, estado)
           `)
           .eq('id_nutriologo', nutriologoId)
+          .in('id_paciente', pacienteIds)
           .order('fecha_hora', { ascending: false });
 
         if (errCitas) throw errCitas;
 
-        const citasFormateadas = citasData?.map(c => {
-          const sonoraDate = DateTime.fromISO(c.fecha_hora, { zone: 'utc' }).setZone(SONORA_TIMEZONE);
+        const citasFormateadas = (citasData || [])
+          .filter((c: any) => {
+            const activeSince = activeSinceByPaciente.get(Number(c.id_paciente));
+            if (!activeSince) return true;
 
-          let fotoUrl = c.pacientes?.foto_perfil;
+            const citaUtc = DateTime.fromISO(c.fecha_hora, { zone: 'utc' });
+            const activeSinceUtc = DateTime.fromISO(activeSince).toUTC();
+
+            if (!citaUtc.isValid || !activeSinceUtc.isValid) return true;
+            return citaUtc >= activeSinceUtc;
+          })
+          .map(c => {
+          const sonoraDate = DateTime.fromISO(c.fecha_hora, { zone: 'utc' }).setZone(SONORA_TIMEZONE);
+          const paciente: any = Array.isArray(c.pacientes) ? c.pacientes[0] : c.pacientes;
+
+          let fotoUrl = paciente?.foto_perfil;
           if (fotoUrl && !fotoUrl.startsWith('http')) {
             fotoUrl = `${STORAGE_PUBLIC_URL}${fotoUrl}`;
           }
@@ -220,12 +243,12 @@ export function GestionCitas() {
             hora: sonoraDate.toLocaleString(DateTime.TIME_SIMPLE),
             fecha_hora: c.fecha_hora, // Para filtrar
             estado: c.estado,
-            pacienteNombre: `${c.pacientes?.nombre || ''} ${c.pacientes?.apellido || ''}`,
+            pacienteNombre: `${paciente?.nombre || ''} ${paciente?.apellido || ''}`,
             foto_perfil: fotoUrl || null,
             pagada: c.pagos?.some(p => p.estado === 'completado') || false,
             monto: c.pagos?.[0]?.monto || 800
           };
-        }) || [];
+        });
 
         setCitas(citasFormateadas);
       } catch (err: any) {
@@ -342,9 +365,17 @@ export function GestionCitas() {
         return;
       }
 
-      const localSonora = DateTime.local(year, month, day, hours, minutes, { zone: SONORA_TIMEZONE });
+      const localSonora = DateTime.fromObject(
+        { year, month, day, hour: hours, minute: minutes },
+        { zone: SONORA_TIMEZONE }
+      );
 
-      const now = DateTime.local({ zone: SONORA_TIMEZONE });
+      if (!localSonora.isValid) {
+        toast.error('La fecha u hora seleccionada no es válida.');
+        return;
+      }
+
+      const now = DateTime.now().setZone(SONORA_TIMEZONE);
       if (localSonora < now) {
         toast.error('No se puede agendar citas en fechas pasadas.');
         return;
@@ -425,7 +456,31 @@ export function GestionCitas() {
       setHora('');
       setSearchQuery('');
 
-      // Refrescar lista
+      // Refrescar lista solo de pacientes activos
+      const { data: relacionesActivas, error: errRelacionesActivas } = await supabase
+        .from('paciente_nutriologo')
+        .select('*')
+        .eq('id_nutriologo', nutriologoId)
+        .eq('activo', true);
+
+      if (errRelacionesActivas) throw errRelacionesActivas;
+
+      const pacienteIdsActivos = relacionesActivas?.map(r => r.id_paciente) || [];
+      const activeSinceByPaciente = new Map<number, string>();
+
+      (relacionesActivas || []).forEach((rel: any) => {
+        const relPacienteId = Number(rel.id_paciente);
+        const activeSince = rel.updated_at || rel.fecha_asignacion || rel.created_at || null;
+        if (activeSince) {
+          activeSinceByPaciente.set(relPacienteId, activeSince);
+        }
+      });
+
+      if (!pacienteIdsActivos.length) {
+        setCitas([]);
+        return;
+      }
+
       const { data: nuevasCitas, error: errRefresh } = await supabase
         .from('citas')
         .select(`
@@ -437,13 +492,26 @@ export function GestionCitas() {
           pagos!left (monto, estado)
         `)
         .eq('id_nutriologo', nutriologoId)
+        .in('id_paciente', pacienteIdsActivos)
         .order('fecha_hora', { ascending: false });
 
       if (!errRefresh) {
-        const formateadas = nuevasCitas?.map(c => {
-          const sonoraDate = DateTime.fromISO(c.fecha_hora, { zone: 'utc' }).setZone(SONORA_TIMEZONE);
+        const formateadas = (nuevasCitas || [])
+          .filter((c: any) => {
+            const activeSince = activeSinceByPaciente.get(Number(c.id_paciente));
+            if (!activeSince) return true;
 
-          let fotoUrl = c.pacientes?.foto_perfil;
+            const citaUtc = DateTime.fromISO(c.fecha_hora, { zone: 'utc' });
+            const activeSinceUtc = DateTime.fromISO(activeSince).toUTC();
+
+            if (!citaUtc.isValid || !activeSinceUtc.isValid) return true;
+            return citaUtc >= activeSinceUtc;
+          })
+          .map(c => {
+          const sonoraDate = DateTime.fromISO(c.fecha_hora, { zone: 'utc' }).setZone(SONORA_TIMEZONE);
+          const paciente: any = Array.isArray(c.pacientes) ? c.pacientes[0] : c.pacientes;
+
+          let fotoUrl = paciente?.foto_perfil;
           if (fotoUrl && !fotoUrl.startsWith('http')) {
             fotoUrl = `${STORAGE_PUBLIC_URL}${fotoUrl}`;
           }
@@ -454,12 +522,12 @@ export function GestionCitas() {
             hora: sonoraDate.toLocaleString(DateTime.TIME_SIMPLE),
             fecha_hora: c.fecha_hora,
             estado: c.estado,
-            pacienteNombre: `${c.pacientes?.nombre || ''} ${c.pacientes?.apellido || ''}`,
+            pacienteNombre: `${paciente?.nombre || ''} ${paciente?.apellido || ''}`,
             foto_perfil: fotoUrl || null,
             pagada: c.pagos?.some(p => p.estado === 'completado') || false,
             monto: c.pagos?.[0]?.monto || 800
           };
-        }) || [];
+        });
         setCitas(formateadas);
       }
     } catch (err: any) {
@@ -468,14 +536,25 @@ export function GestionCitas() {
     }
   };
 
+<<<<<<< HEAD
   const confirmarCita = async (citaId: number, pacienteNombre: string, fecha: string, hora: string, pagada: boolean) => {
     if (!pagada) {
       toast.error('No se puede confirmar la cita hasta que esté pagada.');
+=======
+  const confirmarCita = async (cita: any) => {
+    if (!cita.pagada) {
+      toast.error('No puedes confirmar una cita con pago pendiente.');
+      return;
+    }
+
+    if (cita.estado !== 'pendiente') {
+      toast.warning('Solo se pueden confirmar citas pendientes.');
+>>>>>>> aae5ee8c31175ff24da8ee04daf680452f26f2c8
       return;
     }
 
     const confirmed = window.confirm(
-      `¿Estás seguro de confirmar la cita con ${pacienteNombre} el ${fecha} a las ${hora}?`
+      `¿Estás seguro de confirmar la cita con ${cita.pacienteNombre} el ${cita.fecha} a las ${cita.hora}?`
     );
 
     if (!confirmed) return;
@@ -484,21 +563,31 @@ export function GestionCitas() {
       const { error } = await supabase
         .from('citas')
         .update({ estado: 'confirmada' })
-        .eq('id_cita', citaId);
+        .eq('id_cita', cita.id);
 
       if (error) throw error;
 
       toast.success('Cita confirmada exitosamente');
-      setCitas(prev => prev.map(c => c.id === citaId ? { ...c, estado: 'confirmada' } : c));
+      setCitas(prev => prev.map(c => c.id === cita.id ? { ...c, estado: 'confirmada' } : c));
     } catch (err: any) {
       toast.error('Error al confirmar la cita');
       console.error(err);
     }
   };
 
-  const finalizarCita = async (citaId: number, pacienteNombre: string, fecha: string, hora: string) => {
+  const finalizarCita = async (cita: any) => {
+    if (!cita.pagada) {
+      toast.error('No puedes finalizar una cita con pago pendiente.');
+      return;
+    }
+
+    if (cita.estado !== 'confirmada') {
+      toast.warning('Solo se pueden finalizar citas confirmadas y atendidas.');
+      return;
+    }
+
     const confirmed = window.confirm(
-      `¿Estás seguro de finalizar la cita con ${pacienteNombre} del ${fecha} a las ${hora}?`
+      `¿Estás seguro de finalizar la cita con ${cita.pacienteNombre} del ${cita.fecha} a las ${cita.hora}?`
     );
 
     if (!confirmed) return;
@@ -507,12 +596,12 @@ export function GestionCitas() {
       const { error } = await supabase
         .from('citas')
         .update({ estado: 'completada' })
-        .eq('id_cita', citaId);
+        .eq('id_cita', cita.id);
 
       if (error) throw error;
 
       toast.success('Cita marcada como completada');
-      setCitas(prev => prev.map(c => c.id === citaId ? { ...c, estado: 'completada' } : c));
+      setCitas(prev => prev.map(c => c.id === cita.id ? { ...c, estado: 'completada' } : c));
     } catch (err: any) {
       toast.error('Error al finalizar la cita');
       console.error(err);
@@ -632,7 +721,9 @@ export function GestionCitas() {
                       <DateCalendar
                         mode="single"
                         selected={fechaDateObject}
-                        onSelect={(date) => setFecha(date ? DateTime.fromJSDate(date).toFormat('yyyy-LL-dd') : '')}
+                        onSelect={(date) =>
+                          setFecha(date ? DateTime.fromJSDate(date, { zone: SONORA_TIMEZONE }).toFormat('yyyy-LL-dd') : '')
+                        }
                         locale={es}
                         fromDate={minDateObject}
                         toDate={maxDateObject}
@@ -844,7 +935,11 @@ export function GestionCitas() {
                   <DateCalendar
                     mode="single"
                     selected={draftDateObject}
-                    onSelect={(date) => setDraftSelectedDate(date ? DateTime.fromJSDate(date).toFormat('yyyy-LL-dd') : '')}
+                    onSelect={(date) =>
+                      setDraftSelectedDate(
+                        date ? DateTime.fromJSDate(date, { zone: SONORA_TIMEZONE }).toFormat('yyyy-LL-dd') : ''
+                      )
+                    }
                     locale={es}
                     fromDate={minDateObject}
                     toDate={maxDateObject}
@@ -977,10 +1072,17 @@ export function GestionCitas() {
                       {cita.estado === 'pendiente' && (
                         <Button 
                           size="sm"
+<<<<<<< HEAD
                           onClick={() => confirmarCita(cita.id, cita.pacienteNombre, cita.fecha, cita.hora, cita.pagada)}
                           disabled={!cita.pagada}
                           title={!cita.pagada ? 'Debes registrar el pago para confirmar esta cita' : undefined}
                           className="bg-white border-2 border-[#2E8B57] text-[#2E8B57] hover:bg-[#2E8B57] hover:text-white font-black text-xs uppercase rounded-xl px-4 transition-all"
+=======
+                          onClick={() => confirmarCita(cita)}
+                          disabled={!cita.pagada}
+                          className="bg-white border-2 border-[#2E8B57] text-[#2E8B57] hover:bg-[#2E8B57] hover:text-white font-black text-xs uppercase rounded-xl px-4 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:text-[#2E8B57]"
+                          title={!cita.pagada ? 'No disponible: pago pendiente' : 'Confirmar cita'}
+>>>>>>> aae5ee8c31175ff24da8ee04daf680452f26f2c8
                         >
                           <CheckCircle className="h-3.5 w-3.5 mr-1" />
                           Confirmar
@@ -989,8 +1091,10 @@ export function GestionCitas() {
                       {cita.estado === 'confirmada' && (
                         <Button 
                           size="sm"
-                          onClick={() => finalizarCita(cita.id, cita.pacienteNombre, cita.fecha, cita.hora)}
-                          className="bg-white border-2 border-[#2E8B57] text-[#2E8B57] hover:bg-[#2E8B57] hover:text-white font-black text-xs uppercase rounded-xl px-4 transition-all"
+                          onClick={() => finalizarCita(cita)}
+                          disabled={!cita.pagada}
+                          className="bg-white border-2 border-[#2E8B57] text-[#2E8B57] hover:bg-[#2E8B57] hover:text-white font-black text-xs uppercase rounded-xl px-4 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:text-[#2E8B57]"
+                          title={!cita.pagada ? 'No disponible: pago pendiente' : 'Finalizar cita atendida'}
                         >
                           <CheckCircle className="h-3.5 w-3.5 mr-1" />
                           Finalizar
@@ -1004,7 +1108,7 @@ export function GestionCitas() {
           </CardContent>
         </Card>
 
-        {/* Historial de citas */}
+        {/* SE SUBIUO LOS CAMBIOSSS */}
         <Card className="rounded-[2.5rem] border-2 border-[#D1E8D5] shadow-sm overflow-hidden bg-white">
           <CardHeader className="p-8 border-b border-[#F0FFF4] bg-[#F8FFF9]/50">
             <div className="flex items-center justify-between">
