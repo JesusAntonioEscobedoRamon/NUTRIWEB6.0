@@ -268,7 +268,7 @@ export function Login() {
 
       {/* Modal para resetear contraseña */}
       <Dialog open={resetOpen} onOpenChange={setResetOpen}>
-        <DialogContent className="rounded-[2.5rem] border-2 border-[#D1E8D5] p-8 max-w-md bg-white">
+        <DialogContent className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] max-w-md max-h-[90vh] overflow-y-auto rounded-[2rem] sm:rounded-[2.5rem] border-2 border-[#D1E8D5] p-4 sm:p-6 md:p-8 bg-white">
           <DialogHeader>
             <DialogTitle className="text-2xl font-[900] text-[#2E8B57] uppercase tracking-[2px]">
               Recuperar Contraseña

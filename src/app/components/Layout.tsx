@@ -218,7 +218,6 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
               <div className="h-12 overflow-hidden flex items-center justify-center">
                 <img src="/assets/logo.png" alt="Logo Nutri U" className="h-full w-auto object-contain" />
               </div>
-              <div className="w-8 h-1 bg-[#3CB371] rounded-full" />
            </div>
 
            <div className="w-12" />
@@ -237,7 +236,7 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
       </main>
 
       <AlertDialog open={pendingDialogOpen} onOpenChange={setPendingDialogOpen}>
-        <AlertDialogContent className="rounded-3xl border-2 border-[#D1E8D5]">
+        <AlertDialogContent className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl border-2 border-[#D1E8D5] p-4 sm:p-6">
           <AlertDialogHeader>
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-xl bg-[#FDF4E8] text-[#D97706] flex items-center justify-center">

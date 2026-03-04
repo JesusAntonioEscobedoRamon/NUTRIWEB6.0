@@ -462,8 +462,8 @@ export function GestionPacientes() {
 
       {/* Diálogo de detalles del paciente */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-3xl rounded-[2.5rem] border-2 border-[#D1E8D5] bg-white p-0 overflow-hidden font-sans">
-          <div className="custom-dialog-scroll overflow-y-auto max-h-[90vh] p-8">
+        <DialogContent className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] max-w-3xl max-h-[92vh] rounded-[2rem] sm:rounded-[2.5rem] border-2 border-[#D1E8D5] bg-white p-0 overflow-hidden font-sans">
+          <div className="custom-dialog-scroll overflow-y-auto max-h-[92vh] p-4 sm:p-6 md:p-8">
             <DialogHeader>
               <DialogTitle className="text-3xl font-[900] text-[#2E8B57] uppercase tracking-[2px] mb-4 text-left flex items-center gap-4">
                 <div className="h-16 w-16 bg-[#F0FFF4] rounded-full overflow-hidden border-2 border-[#D1E8D5] flex-shrink-0">

@@ -354,20 +354,70 @@ export function GestionCitas() {
 
       const nutriologoId = Number(user.nutriologoId);
 
-      const { error } = await supabase
+      const idPaciente = Number(selectedPaciente);
+      const { count: existingCount, error: existingCountError } = await supabase
+        .from('citas')
+        .select('id_cita', { count: 'exact', head: true })
+        .eq('id_paciente', idPaciente)
+        .eq('id_nutriologo', nutriologoId);
+
+      if (existingCountError) throw existingCountError;
+
+      const { data: citaCreada, error } = await supabase
         .from('citas')
         .insert({
-          id_paciente: Number(selectedPaciente),
+          id_paciente: idPaciente,
           id_nutriologo: nutriologoId,
           fecha_hora: fechaHoraUTC,
           estado: 'pendiente',
           duracion_minutos: 60,
           tipo_cita: 'presencial'
-        });
+        })
+        .select('id_cita')
+        .single();
 
       if (error) throw error;
 
-      toast.success('Cita agendada exitosamente');
+      const fechaHoraMensaje = localSonora
+        .setLocale('es')
+        .toFormat("dd 'de' LLLL yyyy 'a las' HH:mm");
+
+      const nombreNutriologo = `${user.nombre || ''} ${user.apellido || ''}`.trim();
+      const mensajeNotificacion = nombreNutriologo
+        ? `Tienes una cita con el nutriólogo ${nombreNutriologo} el ${fechaHoraMensaje}. La cita está pendiente de pago.`
+        : `Tienes una cita agendada el ${fechaHoraMensaje}. La cita está pendiente de pago.`;
+
+      const shouldCreatePaymentNotification = (existingCount || 0) > 0;
+
+      if (shouldCreatePaymentNotification) {
+        const { error: notificationError } = await supabase
+          .from('notificaciones')
+          .insert({
+            id_usuario: idPaciente,
+            tipo_usuario: 'paciente',
+            titulo: 'Cita pendiente de pago',
+            mensaje: mensajeNotificacion,
+            tipo: 'pago',
+            leida: false,
+            fecha_envio: new Date().toISOString(),
+            datos_adicionales: {
+              id_cita: citaCreada?.id_cita,
+              id_nutriologo: nutriologoId,
+              requiere_pago: true,
+              estado: 'pendiente_pago',
+              subtipo: 'cita_pendiente_pago'
+            }
+          });
+
+        if (notificationError) {
+          console.error('[GestionCitas] Error insertando notificación:', notificationError);
+          toast.error(`La cita se agendó, pero falló la notificación: ${notificationError.message || 'Intenta de nuevo'}`);
+        } else {
+          toast.success('Cita agendada exitosamente');
+        }
+      } else {
+        toast.success('Cita agendada exitosamente');
+      }
 
       setIsDialogOpen(false);
       setSelectedPaciente('');
@@ -418,7 +468,12 @@ export function GestionCitas() {
     }
   };
 
-  const confirmarCita = async (citaId: number, pacienteNombre: string, fecha: string, hora: string) => {
+  const confirmarCita = async (citaId: number, pacienteNombre: string, fecha: string, hora: string, pagada: boolean) => {
+    if (!pagada) {
+      toast.error('No se puede confirmar la cita hasta que esté pagada.');
+      return;
+    }
+
     const confirmed = window.confirm(
       `¿Estás seguro de confirmar la cita con ${pacienteNombre} el ${fecha} a las ${hora}?`
     );
@@ -509,7 +564,7 @@ export function GestionCitas() {
                   Agendar Cita
                 </Button>
               </DialogTrigger>
-            <DialogContent className="rounded-xl border-2 border-[#D1E8D5] bg-[#F4F8FB] p-0 max-w-5xl font-sans overflow-hidden">
+            <DialogContent className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] max-w-5xl max-h-[92vh] rounded-xl border-2 border-[#D1E8D5] bg-[#F4F8FB] p-0 font-sans overflow-y-auto">
               <DialogHeader className="px-3 py-2.5 border-b border-[#DDE9EE] bg-[#F1F6F9]">
                 <DialogTitle className="text-3xl font-[900] text-[#1A3026] tracking-[0.5px]">
                   Agendar Nueva Cita
@@ -740,7 +795,7 @@ export function GestionCitas() {
           </div>
 
           <Dialog open={isDateModalOpen} onOpenChange={setIsDateModalOpen}>
-            <DialogContent className="w-[96vw] max-w-[1600px] rounded-md border border-[#D1E8D5] p-0 overflow-hidden h-auto max-h-none">
+            <DialogContent className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] max-w-[1600px] max-h-[92vh] rounded-md border border-[#D1E8D5] p-0 overflow-y-auto h-auto">
               <DialogHeader className="px-4 py-3 border-b border-[#F0FFF4] bg-white">
                 <div className="flex items-center gap-2.5">
                   <div className="h-8 w-8 rounded-lg bg-[#F8FFF9] border border-[#D1E8D5] flex items-center justify-center text-[#2E8B57]">
@@ -922,7 +977,9 @@ export function GestionCitas() {
                       {cita.estado === 'pendiente' && (
                         <Button 
                           size="sm"
-                          onClick={() => confirmarCita(cita.id, cita.pacienteNombre, cita.fecha, cita.hora)}
+                          onClick={() => confirmarCita(cita.id, cita.pacienteNombre, cita.fecha, cita.hora, cita.pagada)}
+                          disabled={!cita.pagada}
+                          title={!cita.pagada ? 'Debes registrar el pago para confirmar esta cita' : undefined}
                           className="bg-white border-2 border-[#2E8B57] text-[#2E8B57] hover:bg-[#2E8B57] hover:text-white font-black text-xs uppercase rounded-xl px-4 transition-all"
                         >
                           <CheckCircle className="h-3.5 w-3.5 mr-1" />

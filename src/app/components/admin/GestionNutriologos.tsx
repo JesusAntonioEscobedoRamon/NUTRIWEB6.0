@@ -413,7 +413,7 @@ export function GestionNutriologos() {
               Registrar Nutriólogo
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl rounded-[2.5rem] border-2 border-[#D1E8D5] p-8">
+          <DialogContent className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] max-w-2xl max-h-[90vh] overflow-y-auto rounded-[2rem] sm:rounded-[2.5rem] border-2 border-[#D1E8D5] p-4 sm:p-6 md:p-8">
             <DialogHeader>
               <DialogTitle className="text-2xl font-[900] text-[#1A3026] uppercase tracking-tight">Nuevo Profesional</DialogTitle>
               <DialogDescription className="font-bold text-gray-400 uppercase text-[10px] tracking-widest">
@@ -563,7 +563,7 @@ export function GestionNutriologos() {
                               <Edit size={16} />
                             </Button>
                           </DialogTrigger>
-                          <DialogContent className="max-w-2xl rounded-[2.5rem] border-2 border-[#D1E8D5] p-8">
+                          <DialogContent className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] max-w-2xl max-h-[90vh] overflow-y-auto rounded-[2rem] sm:rounded-[2.5rem] border-2 border-[#D1E8D5] p-4 sm:p-6 md:p-8">
                             <DialogHeader>
                               <DialogTitle className="text-2xl font-[900] text-[#1A3026] uppercase tracking-tight">Editar Nutriólogo</DialogTitle>
                             </DialogHeader>
@@ -631,7 +631,7 @@ export function GestionNutriologos() {
                               <Trash2 size={16} />
                             </Button>
                           </AlertDialogTrigger>
-                          <AlertDialogContent className="rounded-[2.5rem] border-2 border-red-100 p-8">
+                          <AlertDialogContent className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] max-w-lg max-h-[90vh] overflow-y-auto rounded-[2rem] sm:rounded-[2.5rem] border-2 border-red-100 p-4 sm:p-6 md:p-8">
                             <AlertDialogHeader>
                               <div className="flex items-center gap-4 mb-4">
                                 <div className="p-3 bg-red-50 rounded-2xl text-red-600"><AlertTriangle size={24}/></div>

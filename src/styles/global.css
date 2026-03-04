@@ -1,6 +1,6 @@
-/* src/index.css o src/styles/global.css */
+/* src/styles/global.css */
 
-/* Barra de scroll personalizada para diálogos y selects */
+/* === Barra de scroll personalizada === */
 .custom-dialog-scroll::-webkit-scrollbar {
   width: 6px;
 }
@@ -18,8 +18,176 @@
   background: #3CB371;
 }
 
-/* Opcional: para Firefox (scrollbar más delgada) */
+/* Firefox scrollbar */
 .custom-dialog-scroll {
   scrollbar-width: thin;
   scrollbar-color: #D1E8D5 transparent;
+}
+
+/* === Animaciones para banners === */
+@keyframes fadeOut {
+  0% { opacity: 1; transform: translateY(0); }
+  80% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-10px); }
+}
+
+.animate-fade-out {
+  animation: fadeOut 2s forwards;
+  pointer-events: none;
+}
+
+/* Animación slide down al aparecer banner */
+@keyframes slideDown {
+  from { transform: translateY(-100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.connection-banner {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  padding: 12px 16px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  text-align: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+  animation: slideDown 0.4s ease-out;
+}
+
+.connection-banner-offline {
+  composes: connection-banner;
+  background: #ef4444;
+  color: white;
+}
+
+.connection-banner-online {
+  composes: connection-banner;
+  background: #2E8B57;
+  color: white;
+}
+
+/* === Mejoras de accesibilidad y responsive base === */
+html {
+  font-size: 100%; /* Base 16px - respeta zoom del navegador */
+  -webkit-text-size-adjust: 100%; /* Evita zoom forzado en iOS */
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: #1A3026;
+  background: #F0FFF4;
+}
+
+/* Contenido principal: evita que se desplace debajo del banner sticky */
+main, .layout-content, .dashboard-grid {
+  padding-top: 60px; /* Ajusta según altura banner */
+}
+
+/* === Responsive global para contenedores y tarjetas === */
+.container {
+  width: 100%;
+  max-width: 100%;
+  padding: 1rem;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+@media (min-width: 768px) {
+  .container {
+    padding: 1.5rem 2rem;
+    max-width: 1400px; /* Límite en desktop */
+  }
+}
+
+/* Grid de tarjetas: se apilan en móvil, se distribuyen en desktop */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr; /* 1 columna en móvil */
+  gap: 1.25rem; /* Espacio entre tarjetas */
+  padding: 1rem;
+}
+
+@media (min-width: 640px) { /* sm */
+  .dashboard-grid {
+    grid-template-columns: repeat(2, 1fr); /* 2 columnas */
+  }
+}
+
+@media (min-width: 1024px) { /* lg */
+  .dashboard-grid {
+    grid-template-columns: repeat(4, 1fr); /* 4 columnas como en tu imagen */
+  }
+}
+
+/* Tarjetas individuales: evitan desborde y se ajustan */
+.dashboard-card {
+  min-width: 0; /* Evita overflow en grid/flex */
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+  border-radius: 1rem;
+  background: white;
+  padding: 1.5rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+/* Textos: responsive y accesibles (rem en lugar de px) */
+.text-title {
+  font-size: 1.25rem; /* base en móvil */
+  font-weight: 700;
+  color: #2E8B57;
+}
+
+@media (min-width: 768px) {
+  .text-title {
+    font-size: 1.5rem; /* más grande en desktop */
+  }
+}
+
+.text-number {
+  font-size: 3rem; /* grande en móvil */
+  font-weight: 900;
+  color: #1A3026;
+  margin: 0.5rem 0;
+}
+
+@media (min-width: 768px) {
+  .text-number {
+    font-size: 4rem; /* aún más grande en desktop */
+  }
+}
+
+.text-subtitle {
+  font-size: 0.875rem;
+  color: #3CB371;
+  font-weight: 600;
+}
+
+/* Sidebar: colapsa en móvil */
+.sidebar {
+  width: 100%;
+  padding: 1rem;
+}
+
+@media (min-width: 768px) {
+  .sidebar {
+    width: 280px;
+    padding: 1.5rem;
+  }
+}
+
+/* Evita zoom forzado en elementos interactivos */
+button, input, select, textarea {
+  font-size: 1rem; /* respeta zoom usuario */
 }

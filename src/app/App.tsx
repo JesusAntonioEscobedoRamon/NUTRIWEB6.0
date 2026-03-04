@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react'; // ← ESTO YA LO TENÍAS, pero asegúrate de que esté
+// src/app/App.tsx
+import { useState, useEffect, useRef } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider } from '@/app/context/AuthContext';
 import { Login } from '@/app/components/Login';
@@ -6,6 +7,8 @@ import { ResetPassword } from '@/app/components/ResetPassword';
 import { Layout } from '@/app/components/Layout';
 import { Toaster } from '@/app/components/ui/sonner';
 import { useAuth } from '@/app/context/useAuth';
+import { useOffline } from '@/hooks/useOffline';
+import { initDB } from '@/utils/db';
 
 // Admin components
 import { DashboardAdmin } from '@/app/components/admin/DashboardAdmin';
@@ -21,14 +24,13 @@ import { GestionPagos } from '@/app/components/nutriologo/GestionPagos';
 import { Gamificacion } from '@/app/components/nutriologo/Gamificacion';
 import { Perfil } from '@/app/components/nutriologo/Perfil';
 
-// Componente de carga animado
+// AnimatedLoadingScreen (sin cambios)
 function AnimatedLoadingScreen() {
   const iconRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
   const dotsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Animación del icono (hoja)
     const iconElement = iconRef.current;
     const textElement = textRef.current;
     const dotsElement = dotsRef.current;
@@ -131,7 +133,7 @@ function AnimatedLoadingScreen() {
   );
 }
 
-// Componente protegido
+// ProtectedRoute (sin cambios)
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const location = useLocation();
@@ -153,7 +155,54 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function AppContent() {
   const { user } = useAuth();
+  const { isOnline } = useOffline();
   const [activeTab, setActiveTab] = useState('dashboard');
+
+  // Estados para banners (temporales)
+  const [showOfflineBanner, setShowOfflineBanner] = useState(false);
+  const [showRestoredBanner, setShowRestoredBanner] = useState(false);
+  const hasMounted = useRef(false);
+  const lastOfflineTime = useRef<number | null>(null); // Evita re-trigger mientras offline
+
+  // Inicializa IndexedDB
+  useEffect(() => {
+    initDB()
+      .then(() => console.log('[AppContent] IndexedDB inicializado correctamente'))
+      .catch(err => console.error('[AppContent] Error inicializando IndexedDB:', err));
+  }, []);
+
+  // Maneja banners temporales (2 segundos)
+  useEffect(() => {
+    if (!hasMounted.current) {
+      hasMounted.current = true;
+      return;
+    }
+
+    let timer: NodeJS.Timeout | null = null;
+
+    if (!isOnline) {
+      // Solo mostrar si no se mostró recientemente (evita loop)
+      const now = Date.now();
+      if (!lastOfflineTime.current || now - lastOfflineTime.current > 3000) {
+        setShowOfflineBanner(true);
+        lastOfflineTime.current = now;
+        timer = setTimeout(() => setShowOfflineBanner(false), 3000);
+      }
+      setShowRestoredBanner(false);
+    } else if (isOnline && lastOfflineTime.current) {
+      // Restaurada → verde 2s
+      setShowOfflineBanner(false);
+      setShowRestoredBanner(true);
+      timer = setTimeout(() => {
+        setShowRestoredBanner(false);
+        lastOfflineTime.current = null; // Reset para próximo ciclo
+      }, 3000);
+    }
+
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [isOnline]);
 
   if (!user) {
     return null;
@@ -203,6 +252,18 @@ function AppContent() {
 
   return (
     <Layout activeTab={activeTab} onTabChange={setActiveTab}>
+      {/* Banner temporal (2 segundos) */}
+      {showOfflineBanner && (
+        <div className="bg-red-600/95 text-white text-center py-3 px-4 font-medium sticky top-0 z-50 shadow-md animate-fade-out">
+          Sin conexión a internet
+        </div>
+      )}
+      {showRestoredBanner && (
+        <div className="bg-green-600/90 text-white text-center py-3 px-4 font-medium sticky top-0 z-50 shadow-md animate-fade-out">
+          Conexión restaurada
+        </div>
+      )}
+
       {renderContent()}
     </Layout>
   );

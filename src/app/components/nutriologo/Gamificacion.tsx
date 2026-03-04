@@ -285,6 +285,41 @@ export function Gamificacion() {
 
       if (errLog) throw errLog;
 
+      const nombreNutriologo = `${user?.nombre || ''} ${user?.apellido || ''}`.trim();
+      const pacienteSeleccionado = misPacientes.find((p) => p.id === pacienteId);
+      const nombrePaciente = pacienteSeleccionado
+        ? `${pacienteSeleccionado.nombre} ${pacienteSeleccionado.apellido}`.trim()
+        : 'paciente';
+      const mensajeNotificacion = nombreNutriologo
+        ? `Has recibido ${puntosNum} puntos asignados por tu nutriólogo ${nombreNutriologo}.`
+        : `Has recibido ${puntosNum} puntos asignados por tu nutriólogo.`;
+
+      const { error: notificationError } = await supabase
+        .from('notificaciones')
+        .insert({
+          id_usuario: pacienteId,
+          tipo_usuario: 'paciente',
+          titulo: 'Nuevos puntos acumulados',
+          mensaje: mensajeNotificacion,
+          tipo: 'pago',
+          leida: false,
+          fecha_envio: new Date().toISOString(),
+          datos_adicionales: {
+            id_paciente: pacienteId,
+            paciente_nombre: nombrePaciente,
+            id_nutriologo: Number(user?.nutriologoId),
+            puntos_asignados: puntosNum,
+            accion: 'navigate',
+            pantalla_destino: 'puntos_acumulados',
+            subtipo: 'asignacion_puntos'
+          }
+        });
+
+      if (notificationError) {
+        console.error('[Gamificacion] Error insertando notificación:', notificationError);
+        toast.error(`Los puntos se asignaron, pero falló la notificación: ${notificationError.message || 'Intenta de nuevo'}`);
+      }
+
       toast.success(`${puntosNum} puntos asignados con éxito`);
       setIsDialogOpen(false);
       setSelectedPaciente('');
@@ -326,7 +361,7 @@ export function Gamificacion() {
                   Asignar Puntos
                 </Button>
               </DialogTrigger>
-              <DialogContent className="rounded-[2.5rem] border-2 border-[#D1E8D5] p-8 max-w-lg">
+              <DialogContent className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] max-w-lg max-h-[90vh] overflow-y-auto rounded-[2rem] sm:rounded-[2.5rem] border-2 border-[#D1E8D5] p-4 sm:p-6 md:p-8">
                 <DialogHeader>
                   <DialogTitle className="text-2xl font-[900] text-[#2E8B57] uppercase tracking-wider">
                     Premia el esfuerzo

@@ -1,3 +1,4 @@
+// vite.config.ts
 import { defineConfig } from "vite";
 import path from "path";
 import tailwindcss from "@tailwindcss/vite";
@@ -11,7 +12,7 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       devOptions: {
-        enabled: true, // Para que funcione también en desarrollo (útil para pruebas)
+        enabled: true, // Para probar offline en desarrollo (muy útil)
       },
       includeAssets: [
         "favicon.ico",
@@ -20,14 +21,14 @@ export default defineConfig({
         "pwa-*.png",
       ],
       manifest: {
-        name: "Nutri U - Nutrición Personalizada",
+        name: "Nutri U",
         short_name: "NutriU",
         description:
           "Seguimiento nutricional, citas con nutriólogos y planes personalizados",
         theme_color: "#2E8B57",
         background_color: "#F8FFF9",
         display: "standalone",
-        display_override: ["standalone", "fullscreen", "minimal-ui"], // Mejora compatibilidad iOS/Android
+        display_override: ["standalone", "fullscreen", "minimal-ui"],
         scope: "/",
         start_url: "/",
         orientation: "portrait-primary",
@@ -49,7 +50,7 @@ export default defineConfig({
             src: "/pwa-512x512.png",
             sizes: "512x512",
             type: "image/png",
-            purpose: "maskable", // Obligatorio para Android (ícono redondo)
+            purpose: "maskable", // Obligatorio para Android
           },
         ],
         // Optimizaciones específicas para iOS
@@ -59,10 +60,43 @@ export default defineConfig({
         },
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,ico,png,svg,webp,json,woff2}"],
+        // Cachea todos los assets estáticos generados por Vite
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,webp,json,woff,woff2}"],
+
+        // Estrategias de caché en tiempo de ejecución (esto hace el offline real)
         runtimeCaching: [
+          // 1. Navegación (páginas) → intenta red primero, fallback rápido a caché
           {
-            urlPattern: /\.(?:png|jpg|jpeg|svg|webp)$/,
+            urlPattern: ({ request }) => request.mode === "navigate",
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "pages-cache",
+              networkTimeoutSeconds: 10, // Si la red tarda >10s → usa caché
+              expiration: {
+                maxEntries: 50,
+                maxAgeSeconds: 30 * 24 * 60 * 60, // 30 días
+              },
+            },
+          },
+
+          // 2. JS y CSS → usa caché mientras actualiza en background
+          {
+            urlPattern: ({ request }) =>
+              request.destination === "script" ||
+              request.destination === "style",
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "assets-cache",
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 7 * 24 * 60 * 60, // 1 semana
+              },
+            },
+          },
+
+          // 3. Imágenes y media → caché primero (perfecto para offline)
+          {
+            urlPattern: ({ request }) => request.destination === "image",
             handler: "CacheFirst",
             options: {
               cacheName: "images-cache",
@@ -72,7 +106,28 @@ export default defineConfig({
               },
             },
           },
+
+          // 4. APIs de Supabase → intenta red primero, fallback a caché si offline
+          {
+            urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "supabase-api-cache",
+              networkTimeoutSeconds: 10,
+              expiration: {
+                maxEntries: 50,
+                maxAgeSeconds: 24 * 60 * 60, // 1 día (datos dinámicos no muy viejos)
+              },
+              cacheableResponse: {
+                statuses: [0, 200], // Cachea respuestas OK y opacas (importante para fallback)
+              },
+            },
+          },
         ],
+
+        // Fallback cuando falla TODO (muestra offline.html)
+        navigateFallback: "/offline.html",
+        navigateFallbackDenylist: [/^\/_/, /.*?\.map$/], // Evita fallback en rutas internas o sourcemaps
       },
     }),
   ],

@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/ca
 import { Button } from '@/app/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/app/components/ui/table';
 import { Badge } from '@/app/components/ui/badge';
-import { Input } from '@/app/components/ui/input'; // ← IMPORTACIÓN QUE FALTABA
+import { Input } from '@/app/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/app/components/ui/avatar';
 import { useAuth } from '@/app/context/useAuth';
 import { supabase } from '@/app/context/supabaseClient';
@@ -179,6 +179,7 @@ export function GestionPagos() {
         setFilteredCitas(citasFormateadas);
 
         const ingresos = citasFormateadas.reduce((acc, c) => acc + (c.pagada ? c.monto : 0), 0);
+        // Corrección: suma SOLO los montos de citas pendientes (no pagadas)
         const pendientes = citasFormateadas.reduce((acc, c) => acc + (!c.pagada ? c.monto : 0), 0);
 
         const now = new Date();
@@ -216,50 +217,107 @@ export function GestionPagos() {
     setFilteredCitas(filtered);
   }, [searchQuery, citas]);
 
-  // Función para generar y descargar recibo en PDF
+  // Función para generar y descargar recibo en PDF (corregido con tus requisitos)
   const descargarRecibo = (cita: any) => {
-    const doc = new jsPDF();
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' }); // ← VERTICAL (portrait)
 
-    const verde = [46, 139, 87]; // #2E8B57
-    const grisOscuro = [50, 50, 50];
+    const verdePrincipal = [46, 139, 87];      // #2E8B57
+    const verdeClaro = [240, 255, 244];        // #F0FFF4 (fondo)
+    const verdeHeader = [232, 245, 233];       // #E8F5E9 (header suave)
+    const grisOscuro = [26, 48, 38];           // #1A3026 (texto principal)
+    const grisMedio = [75, 85, 99];            // #4B5563 (subtítulos)
 
-    // Header
-    doc.setFillColor(...verde);
-    doc.rect(0, 0, 210, 40, 'F');
-    doc.setFontSize(22);
-    doc.setTextColor(255);
+    // Header con fondo verde claro y logo
+    doc.setFillColor(...verdeClaro);
+    doc.rect(0, 0, 210, 50, 'F');
+
+    // Logo centrado arriba
+    const logoWidth = 60;
+    const logoHeight = 30;
+    doc.addImage(
+      '/assets/logo.png',
+      'PNG',
+      (210 - logoWidth) / 2,
+      10,
+      logoWidth,
+      logoHeight
+    );
+
+    // Título del recibo
+    doc.setFontSize(24);
+    doc.setTextColor(...verdePrincipal);
     doc.setFont('helvetica', 'bold');
-    doc.text('RECIBO DE PAGO', 105, 25, { align: 'center' });
+    doc.text('RECIBO DE PAGO', 105, 55, { align: 'center' });
 
-    // NutriU
-    doc.setFontSize(14);
-    doc.text('NutriU', 105, 35, { align: 'center' });
-
-    // Información
+    // Subtítulo
     doc.setFontSize(12);
+    doc.setTextColor(...grisMedio);
+    doc.text('NutriU - Nutrición Personalizada', 105, 62, { align: 'center' });
+
+    // Sección de información del nutriólogo (separada y arriba)
+    doc.setFontSize(11);
     doc.setTextColor(...grisOscuro);
-    let y = 55;
-    doc.text(`Nutriólogo: ${user?.nombre || 'Jose C'}`, 20, y); y += 8;
-    doc.text(`Paciente: ${cita.paciente.nombre} ${cita.paciente.apellido}`, 20, y); y += 8;
-    doc.text(`Email: ${cita.paciente.email}`, 20, y); y += 8;
-    doc.text(`Fecha y Hora: ${cita.fecha} ${cita.hora}`, 20, y); y += 12;
+    let y = 80;
 
-    doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
-    doc.text(`Monto: $${cita.monto.toLocaleString('es-MX')}`, 20, y); y += 10;
-
-    doc.setFontSize(12);
+    doc.text('Nutriólogo:', 20, y);
     doc.setFont('helvetica', 'normal');
+    doc.text(`${user?.nombre || 'Jose C'} ${user?.apellido || ''}`, 60, y); y += 8;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Correo:', 20, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`${user?.email || 'nutriologo.josec@email.com'}`, 60, y); y += 8;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Teléfono:', 20, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text('+52 (653) 536 7647', 60, y); y += 12;
+
+    // Sección de información del paciente (separada)
+    doc.setFont('helvetica', 'bold');
+    doc.text('Paciente:', 20, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`${cita.paciente.nombre} ${cita.paciente.apellido}`, 60, y); y += 8;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Email del paciente:', 20, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`${cita.paciente.email}`, 60, y); y += 12;
+
+    // Fecha y hora vertical (separadas en líneas)
+    doc.setFont('helvetica', 'bold');
+    doc.text('Fecha:', 20, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`${cita.fecha}`, 60, y); y += 8;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Hora:', 20, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`${cita.hora}`, 60, y); y += 12;
+
+    // Monto destacado (siempre el monto real)
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...verdePrincipal);
+    doc.text(`Monto total: $${cita.monto.toLocaleString('es-MX')}`, 20, y); y += 12;
+
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...grisOscuro);
     doc.text(`Estado: ${cita.pagada ? 'PAGADO' : 'PENDIENTE'}`, 20, y); y += 15;
 
-    // Footer
+    // Footer profesional (igual que en el PDF de dietas)
+    const finalY = doc.internal.pageSize.height - 40;
     doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.text('© +52 (653) 536 7647 • +52 (662) 146 4154', 105, y + 20, { align: 'center' });
-    doc.text('nutriologo.josec@email.com', 105, y + 27, { align: 'center' });
-    doc.text('Av. Kino y Calle 7 #1/2 Col. Médica, San Luis Río Colorado, Sonora', 105, y + 34, { align: 'center' });
+    doc.setTextColor(...grisMedio);
+    doc.text('© NutriU • +52 (653) 536 7647 • +52 (662) 146 4154', 105, finalY, { align: 'center' });
+    doc.text('nutriologo.josec@email.com', 105, finalY + 7, { align: 'center' });
+    doc.text('Av. Kino y Calle 7 #1/2 Col. Médica, San Luis Río Colorado, Sonora', 105, finalY + 14, { align: 'center' });
+    doc.text('@nutlotbhm', 105, finalY + 21, { align: 'center' });
 
-    doc.save(`Recibo_${cita.id}_${cita.fecha.replace(/\//g, '-')}.pdf`);
+    // Descarga
+    doc.save(`Recibo_${cita.id}_${cita.fecha.replace(/\//g, '-')}_${cita.paciente.nombre || 'Paciente'}.pdf`);
     toast.success('Recibo generado y descargado');
   };
 
