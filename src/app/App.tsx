@@ -1,30 +1,49 @@
-// src/app/App.tsx
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider } from '@/app/context/AuthContext';
-import { Login } from '@/app/components/Login';
-import { ResetPassword } from '@/app/components/ResetPassword';
 import { Layout } from '@/app/components/Layout';
 import { Toaster } from '@/app/components/ui/sonner';
 import { useAuth } from '@/app/context/useAuth';
 import { useOffline } from '@/hooks/useOffline';
 import { initDB } from '@/utils/db';
 
-// Admin components
-import { DashboardAdmin } from '@/app/components/admin/DashboardAdmin';
-import { GestionNutriologos } from '@/app/components/admin/GestionNutriologos';
-import { EstadisticasAdmin } from '@/app/components/admin/EstadisticasAdmin';
+const importLogin = () => import('@/app/components/Login').then(m => ({ default: m.Login }));
+const importResetPassword = () => import('@/app/components/ResetPassword').then(m => ({ default: m.ResetPassword }));
+const importDashboardAdmin = () => import('@/app/components/admin/DashboardAdmin').then(m => ({ default: m.DashboardAdmin }));
+const importGestionNutriologos = () => import('@/app/components/admin/GestionNutriologos').then(m => ({ default: m.GestionNutriologos }));
+const importEstadisticasAdmin = () => import('@/app/components/admin/EstadisticasAdmin').then(m => ({ default: m.EstadisticasAdmin }));
+const importDashboardNutriologo = () => import('@/app/components/nutriologo/DashboardNutriologo').then(m => ({ default: m.DashboardNutriologo }));
+const importGestionPacientes = () => import('@/app/components/nutriologo/GestionPacientes').then(m => ({ default: m.GestionPacientes }));
+const importGestionCitas = () => import('@/app/components/nutriologo/GestionCitas').then(m => ({ default: m.GestionCitas }));
+const importGestionDietas = () => import('@/app/components/nutriologo/GestionDietas').then(m => ({ default: m.GestionDietas }));
+const importGestionPagos = () => import('@/app/components/nutriologo/GestionPagos').then(m => ({ default: m.GestionPagos }));
+const importGamificacion = () => import('@/app/components/nutriologo/Gamificacion').then(m => ({ default: m.Gamificacion }));
+const importPerfil = () => import('@/app/components/nutriologo/Perfil').then(m => ({ default: m.Perfil }));
 
-// Nutriologo components
-import { DashboardNutriologo } from '@/app/components/nutriologo/DashboardNutriologo';
-import { GestionPacientes } from '@/app/components/nutriologo/GestionPacientes';
-import { GestionCitas } from '@/app/components/nutriologo/GestionCitas';
-import { GestionDietas } from '@/app/components/nutriologo/GestionDietas';
-import { GestionPagos } from '@/app/components/nutriologo/GestionPagos';
-import { Gamificacion } from '@/app/components/nutriologo/Gamificacion';
-import { Perfil } from '@/app/components/nutriologo/Perfil';
+const Login = lazy(importLogin);
+const ResetPassword = lazy(importResetPassword);
+const DashboardAdmin = lazy(importDashboardAdmin);
+const GestionNutriologos = lazy(importGestionNutriologos);
+const EstadisticasAdmin = lazy(importEstadisticasAdmin);
+const DashboardNutriologo = lazy(importDashboardNutriologo);
+const GestionPacientes = lazy(importGestionPacientes);
+const GestionCitas = lazy(importGestionCitas);
+const GestionDietas = lazy(importGestionDietas);
+const GestionPagos = lazy(importGestionPagos);
+const Gamificacion = lazy(importGamificacion);
+const Perfil = lazy(importPerfil);
 
-// AnimatedLoadingScreen (sin cambios)
+function canPreloadOnCurrentNetwork() {
+  const connection = (navigator as Navigator & {
+    connection?: { effectiveType?: string; saveData?: boolean };
+  }).connection;
+
+  if (!connection) return true;
+  if (connection.saveData) return false;
+  if (connection.effectiveType === 'slow-2g' || connection.effectiveType === '2g') return false;
+  return true;
+}
+
 function AnimatedLoadingScreen() {
   const iconRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
@@ -132,8 +151,6 @@ function AnimatedLoadingScreen() {
     </div>
   );
 }
-
-// ProtectedRoute (sin cambios)
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const location = useLocation();
@@ -157,21 +174,55 @@ function AppContent() {
   const { user } = useAuth();
   const { isOnline } = useOffline();
   const [activeTab, setActiveTab] = useState('dashboard');
-
-  // Estados para banners (temporales)
   const [showOfflineBanner, setShowOfflineBanner] = useState(false);
   const [showRestoredBanner, setShowRestoredBanner] = useState(false);
   const hasMounted = useRef(false);
   const lastOfflineTime = useRef<number | null>(null); // Evita re-trigger mientras offline
-
-  // Inicializa IndexedDB
   useEffect(() => {
     initDB()
-      .then(() => console.log('[AppContent] IndexedDB inicializado correctamente'))
-      .catch(err => console.error('[AppContent] Error inicializando IndexedDB:', err));
   }, []);
 
-  // Maneja banners temporales (2 segundos)
+  useEffect(() => {
+    if (!user) return;
+
+    if (!canPreloadOnCurrentNetwork()) return;
+
+    const firstWave = user.rol === 'admin'
+      ? [importGestionNutriologos, importEstadisticasAdmin]
+      : [importGestionPacientes, importGestionCitas];
+
+    const secondWave = user.rol === 'admin'
+      ? []
+      : [importGestionDietas, importGestionPagos, importGamificacion, importPerfil];
+
+    const runWave = async (loaders: Array<() => Promise<unknown>>) => {
+      await Promise.allSettled(loaders.map((loader) => loader()));
+    };
+
+    let firstTimeoutId: number | null = null;
+    let secondTimeoutId: number | null = null;
+
+    firstTimeoutId = window.setTimeout(() => {
+      void runWave(firstWave);
+    }, 1500);
+
+    if (secondWave.length > 0) {
+      secondTimeoutId = window.setTimeout(() => {
+        void runWave(secondWave);
+      }, 4200);
+    }
+
+    return () => {
+      if (firstTimeoutId !== null) {
+        window.clearTimeout(firstTimeoutId);
+      }
+
+      if (secondTimeoutId !== null) {
+        window.clearTimeout(secondTimeoutId);
+      }
+    };
+  }, [user]);
+
   useEffect(() => {
     if (!hasMounted.current) {
       hasMounted.current = true;
@@ -181,7 +232,6 @@ function AppContent() {
     let timer: NodeJS.Timeout | null = null;
 
     if (!isOnline) {
-      // Solo mostrar si no se mostró recientemente (evita loop)
       const now = Date.now();
       if (!lastOfflineTime.current || now - lastOfflineTime.current > 3000) {
         setShowOfflineBanner(true);
@@ -190,7 +240,6 @@ function AppContent() {
       }
       setShowRestoredBanner(false);
     } else if (isOnline && lastOfflineTime.current) {
-      // Restaurada → verde 2s
       setShowOfflineBanner(false);
       setShowRestoredBanner(true);
       timer = setTimeout(() => {
@@ -207,9 +256,6 @@ function AppContent() {
   if (!user) {
     return null;
   }
-
-  console.log('[AppContent] Renderizando dashboard para rol:', user.rol);
-
   const renderContent = () => {
     if (user.rol === 'admin') {
       switch (activeTab) {
@@ -225,7 +271,7 @@ function AppContent() {
     } else if (user.rol === 'nutriologo') {
       switch (activeTab) {
         case 'dashboard':
-          return <DashboardNutriologo />;
+          return <DashboardNutriologo onTabChange={setActiveTab} />;
         case 'pacientes':
           return <GestionPacientes />;
         case 'citas':
@@ -239,7 +285,7 @@ function AppContent() {
         case 'perfil':
           return <Perfil />;
         default:
-          return <DashboardNutriologo />;
+          return <DashboardNutriologo onTabChange={setActiveTab} />;
       }
     } else {
       return (
@@ -252,7 +298,6 @@ function AppContent() {
 
   return (
     <Layout activeTab={activeTab} onTabChange={setActiveTab}>
-      {/* Banner temporal (2 segundos) */}
       {showOfflineBanner && (
         <div className="bg-red-600/95 text-white text-center py-3 px-4 font-medium sticky top-0 z-50 shadow-md animate-fade-out">
           Sin conexión a internet
@@ -264,7 +309,9 @@ function AppContent() {
         </div>
       )}
 
-      {renderContent()}
+      <Suspense fallback={<AnimatedLoadingScreen />}>
+        {renderContent()}
+      </Suspense>
     </Layout>
   );
 }
@@ -273,8 +320,22 @@ export default function App() {
   return (
     <AuthProvider>
       <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route
+          path="/login"
+          element={
+            <Suspense fallback={<AnimatedLoadingScreen />}>
+              <Login />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/reset-password"
+          element={
+            <Suspense fallback={<AnimatedLoadingScreen />}>
+              <ResetPassword />
+            </Suspense>
+          }
+        />
 
         <Route
           path="/"

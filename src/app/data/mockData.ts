@@ -1,4 +1,3 @@
-// Datos mock para la aplicación
 
 export interface Paciente {
   id: string;
@@ -297,8 +296,6 @@ export const mockPagos: Pago[] = [
     comprobante: 'COMP-006-2025'
   }
 ];
-
-// Datos para gestión de nutriólogos (para admin)
 export interface Nutriologo {
   id: string;
   nombre: string;
@@ -339,7 +336,6 @@ export function agregarNutriologo(nutriologo: Nutriologo) {
 export function actualizarNutriologo(nutriologoActualizado: Nutriologo) {
   const index = mockNutriologos.findIndex(n => n.id === nutriologoActualizado.id);
   if (index !== -1) {
-    // Mantener la contraseña existente si no se proporciona una nueva
     const contrasenaActual = mockNutriologos[index].contrasena;
     mockNutriologos[index] = {
       ...nutriologoActualizado,

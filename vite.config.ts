@@ -6,19 +6,46 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
+  server: {
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      Pragma: "no-cache",
+      Expires: "0",
+      "Surrogate-Control": "no-store",
+    },
+  },
+  preview: {
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      Pragma: "no-cache",
+      Expires: "0",
+      "Surrogate-Control": "no-store",
+    },
+  },
   plugins: [
     react(),
     tailwindcss(),
     VitePWA({
+      injectRegister: false,
+      manifestFilename: "manifest-nutriu-v6.webmanifest",
       registerType: "autoUpdate",
       devOptions: {
-        enabled: true, // Para probar offline en desarrollo (muy útil)
+        enabled: false, // En dev puede volver lenta la navegación por SW
       },
       includeAssets: [
         "favicon.ico",
-        "apple-touch-icon.png",
+        "logotipo_mini.png",
+        "pwa-48x48-nutriu-v6.png",
+        "pwa-64x64-nutriu-v6.png",
+        "pwa-72x72-nutriu-v6.png",
+        "pwa-96x96-nutriu-v6.png",
+        "pwa-128x128-nutriu-v6.png",
+        "pwa-192x192-nutriu-v6.png",
+        "pwa-256x256-nutriu-v6.png",
+        "pwa-384x384-nutriu-v6.png",
+        "pwa-512x512-nutriu-v6.png",
+        "pwa-512x512-maskable-nutriu-v6.png",
         "masked-icon.svg",
-        "pwa-*.png",
       ],
       manifest: {
         name: "Nutri U",
@@ -32,22 +59,64 @@ export default defineConfig({
         scope: "/",
         start_url: "/",
         orientation: "portrait-primary",
-        id: "/?utm_source=pwa",
+        id: "/?utm_source=pwa_nutriu_v6",
         icons: [
           {
-            src: "/pwa-192x192.png",
+            src: "/pwa-48x48-nutriu-v6.png",
+            sizes: "48x48",
+            type: "image/png",
+            purpose: "any",
+          },
+          {
+            src: "/pwa-64x64-nutriu-v6.png",
+            sizes: "64x64",
+            type: "image/png",
+            purpose: "any",
+          },
+          {
+            src: "/pwa-72x72-nutriu-v6.png",
+            sizes: "72x72",
+            type: "image/png",
+            purpose: "any",
+          },
+          {
+            src: "/pwa-96x96-nutriu-v6.png",
+            sizes: "96x96",
+            type: "image/png",
+            purpose: "any",
+          },
+          {
+            src: "/pwa-128x128-nutriu-v6.png",
+            sizes: "128x128",
+            type: "image/png",
+            purpose: "any",
+          },
+          {
+            src: "/pwa-192x192-nutriu-v6.png",
             sizes: "192x192",
             type: "image/png",
             purpose: "any",
           },
           {
-            src: "/pwa-512x512.png",
+            src: "/pwa-256x256-nutriu-v6.png",
+            sizes: "256x256",
+            type: "image/png",
+            purpose: "any",
+          },
+          {
+            src: "/pwa-384x384-nutriu-v6.png",
+            sizes: "384x384",
+            type: "image/png",
+            purpose: "any",
+          },
+          {
+            src: "/pwa-512x512-nutriu-v6.png",
             sizes: "512x512",
             type: "image/png",
             purpose: "any",
           },
           {
-            src: "/pwa-512x512.png",
+            src: "/pwa-512x512-maskable-nutriu-v6.png",
             sizes: "512x512",
             type: "image/png",
             purpose: "maskable", // Obligatorio para Android
@@ -60,41 +129,17 @@ export default defineConfig({
         },
       },
       workbox: {
+        cleanupOutdatedCaches: true,
+        skipWaiting: true,
+        clientsClaim: true,
         // Cachea todos los assets estáticos generados por Vite
         globPatterns: ["**/*.{js,css,html,ico,png,svg,webp,json,woff,woff2}"],
 
-        // Estrategias de caché en tiempo de ejecución (esto hace el offline real)
+        // Runtime caching: SOLO imágenes externas (ej. fotos de perfil de Supabase Storage).
+        // NO cachear navegación ni JS/CSS: ya están en el precache versionado de Workbox
+        // y un runtime cache tiene MAYOR prioridad que el precache, lo que causaría servir
+        // index.html o chunks con hashes viejos tras un build nuevo → freeze en refresh.
         runtimeCaching: [
-          // 1. Navegación (páginas) → intenta red primero, fallback rápido a caché
-          {
-            urlPattern: ({ request }) => request.mode === "navigate",
-            handler: "NetworkFirst",
-            options: {
-              cacheName: "pages-cache",
-              networkTimeoutSeconds: 10, // Si la red tarda >10s → usa caché
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 30 * 24 * 60 * 60, // 30 días
-              },
-            },
-          },
-
-          // 2. JS y CSS → usa caché mientras actualiza en background
-          {
-            urlPattern: ({ request }) =>
-              request.destination === "script" ||
-              request.destination === "style",
-            handler: "StaleWhileRevalidate",
-            options: {
-              cacheName: "assets-cache",
-              expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 7 * 24 * 60 * 60, // 1 semana
-              },
-            },
-          },
-
-          // 3. Imágenes y media → caché primero (perfecto para offline)
           {
             urlPattern: ({ request }) => request.destination === "image",
             handler: "CacheFirst",
@@ -106,28 +151,24 @@ export default defineConfig({
               },
             },
           },
-
-          // 4. APIs de Supabase → intenta red primero, fallback a caché si offline
-          {
-            urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
-            handler: "NetworkFirst",
-            options: {
-              cacheName: "supabase-api-cache",
-              networkTimeoutSeconds: 10,
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 24 * 60 * 60, // 1 día (datos dinámicos no muy viejos)
-              },
-              cacheableResponse: {
-                statuses: [0, 200], // Cachea respuestas OK y opacas (importante para fallback)
-              },
-            },
-          },
         ],
 
-        // Fallback cuando falla TODO (muestra offline.html)
-        navigateFallback: "/offline.html",
-        navigateFallbackDenylist: [/^\/_/, /.*?\.map$/], // Evita fallback en rutas internas o sourcemaps
+        // En una SPA, el refresh de rutas debe volver a index.html
+        navigateFallback: "/index.html",
+        navigateFallbackDenylist: [
+          /^\/_/,
+          /^\/api\//,
+          /.*?\.map$/,
+          /.*?\.js$/,
+          /.*?\.mjs$/,
+          /.*?\.css$/,
+          /.*?\.json$/,
+          /.*?\.woff2?$/,
+          /.*?\.png$/,
+          /.*?\.svg$/,
+          /.*?\.webp$/,
+          /^\/assets\//,
+        ],
       },
     }),
   ],

@@ -5,15 +5,55 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/app/components/ui/badge';
 import { Input } from '@/app/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/app/components/ui/avatar';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/app/components/ui/dialog';
+import { Calendar as DateCalendar } from '@/app/components/ui/calendar';
 import { useAuth } from '@/app/context/useAuth';
 import { supabase } from '@/app/context/supabaseClient';
-import { DollarSign, Download, TrendingUp, CreditCard, CheckCircle, Clock, Wallet, Search } from 'lucide-react';
+import { DollarSign, Download, TrendingUp, CreditCard, CheckCircle, Clock, Wallet, Search, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
 import jsPDF from 'jspdf';
+import { DateTime } from 'luxon';
+import { dbgGroup, dbgGroupEnd, dbgLog, dbgOk, dbgError } from '@/utils/debug';
 
 const STORAGE_PUBLIC_URL = 'https://hthnkzwjotwqhvjgqhfv.supabase.co/storage/v1/object/public/perfiles/';
+const SONORA_TIMEZONE = 'America/Phoenix';
 
-// Componente de carga animado (sin cambios)
+const isoDateToLocalDate = (isoDate: string): Date => {
+  const [year, month, day] = isoDate.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
+
+const getPaymentDateRaw = (row: any, fallbackByCitaId?: Map<number, string>): string | null => {
+  const candidates = [
+    row?.pago_created_at,
+    row?.pago_fecha_hora,
+    row?.pago_fecha_pago,
+    row?.fecha_pago,
+    row?.pago_fecha,
+    row?.pago_updated_at,
+    fallbackByCitaId?.get(Number(row?.id_cita)),
+  ];
+
+  for (const value of candidates) {
+    if (typeof value === 'string' && value.trim()) {
+      return value;
+    }
+  }
+
+  return null;
+};
+
+const parseToSonoraDateTime = (rawDate: string | null): DateTime | null => {
+  if (!rawDate) return null;
+
+  let parsed = DateTime.fromISO(rawDate, { zone: 'utc' });
+  if (!parsed.isValid) {
+    parsed = DateTime.fromISO(rawDate);
+  }
+
+  if (!parsed.isValid) return null;
+  return parsed.setZone(SONORA_TIMEZONE);
+};
 function AnimatedLoadingScreen() {
   const iconRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
@@ -118,6 +158,12 @@ export function GestionPagos() {
   const [ingresosTotales, setIngresosTotales] = useState(0);
   const [pendientesCobro, setPendientesCobro] = useState(0);
   const [citasEsteMes, setCitasEsteMes] = useState(0);
+  const [tarifaConsulta, setTarifaConsulta] = useState(0);
+  const [selectedDate, setSelectedDate] = useState(''); // Sin filtro de fecha al iniciar
+  const [draftSelectedDate, setDraftSelectedDate] = useState('');
+  const [isDateModalOpen, setIsDateModalOpen] = useState(false);
+  const draftDateObject = draftSelectedDate ? isoDateToLocalDate(draftSelectedDate) : undefined;
+  const todayDateObject = DateTime.now().setZone(SONORA_TIMEZONE).endOf('day').toJSDate();
 
   useEffect(() => {
     if (!user?.nutriologoId) {
@@ -127,9 +173,28 @@ export function GestionPagos() {
     }
 
     const fetchPagos = async () => {
+      dbgGroup('screen', `GestionPagos — nutriologoId=${user.nutriologoId}`);
       setLoading(true);
+
+      const timeoutId = setTimeout(() => {
+        dbgError('GestionPagos: timeout 15s — desbloqueo forzado');
+        console.error('[NutriU] GestionPagos: timeout esperando datos de Supabase.');
+        setLoading(false);
+      }, 15000);
+
       try {
         const nutriologoId = Number(user.nutriologoId);
+        dbgLog('Cargando datos de pagos...');
+        const { data: nutriologoData, error: errNutriologo } = await supabase
+          .from('nutriologos')
+          .select('tarifa_consulta')
+          .eq('id_nutriologo', nutriologoId)
+          .single();
+
+        if (errNutriologo) throw errNutriologo;
+
+        const tarifa = Number(nutriologoData?.tarifa_consulta || 0);
+        setTarifaConsulta(tarifa);
 
         const { data: relacionesActivas, error: errRelacionesActivas } = await supabase
           .from('paciente_nutriologo')
@@ -182,6 +247,34 @@ export function GestionPagos() {
           .rpc('get_pagados_nutriologo', { p_nutriologo_id: nutriologoId });
 
         if (errCitas) throw errCitas;
+        const citaIds = (citasData || [])
+          .map((c: any) => Number(c.id_cita))
+          .filter((id: number) => Number.isFinite(id));
+
+        const paymentDateByCitaId = new Map<number, string>();
+        if (citaIds.length > 0) {
+          const { data: pagosData, error: errPagosData } = await supabase
+            .from('pagos')
+            .select('id_cita, fecha_pago, estado')
+            .in('id_cita', citaIds)
+            .order('fecha_pago', { ascending: false });
+
+          if (errPagosData) {
+          } else {
+            (pagosData || []).forEach((pago: any) => {
+              const idCita = Number(pago.id_cita);
+              if (!Number.isFinite(idCita)) return;
+
+              const rawDate = typeof pago.fecha_pago === 'string' ? pago.fecha_pago : null;
+              if (!rawDate) return;
+              if (pago.estado === 'completado') {
+                paymentDateByCitaId.set(idCita, rawDate);
+              } else if (!paymentDateByCitaId.has(idCita)) {
+                paymentDateByCitaId.set(idCita, rawDate);
+              }
+            });
+          }
+        }
 
         const citasActivas = (citasData || []).filter((c: any) => {
           const correo = (c.paciente_correo || '').toLowerCase();
@@ -202,71 +295,93 @@ export function GestionPagos() {
           return fechaCita >= fechaRelacion;
         });
 
-        const citasFormateadas = citasActivas.map(c => ({
-          foto_perfil: (() => {
-            const correo = (c.paciente_correo || '').toLowerCase();
-            const fotoRaw = c.paciente_foto_perfil || activePatientsByEmail.get(correo)?.foto_perfil || null;
-            if (!fotoRaw) return null;
-            return fotoRaw.startsWith('http') ? fotoRaw : `${STORAGE_PUBLIC_URL}${fotoRaw}`;
-          })(),
-          id: c.id_cita,
-          fecha_hora: new Date(c.fecha_hora),
-          fecha: new Date(c.fecha_hora).toLocaleDateString('es-MX'),
-          hora: new Date(c.fecha_hora).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
-          estado: c.estado,
-          paciente: {
-            nombre: c.paciente_nombre || 'Sin nombre',
-            apellido: c.paciente_apellido || '',
-            email: c.paciente_correo || 'Sin email'
-          },
-          pagada: c.pago_estado === 'completado',
-          monto: Number(c.pago_monto || 0)
-        }));
+        const citasFormateadas = citasActivas.map(c => {
+          const correo = (c.paciente_correo || '').toLowerCase();
+          const fotoRaw = c.paciente_foto_perfil || activePatientsByEmail.get(correo)?.foto_perfil || null;
+          const pagoDateRaw = getPaymentDateRaw(c, paymentDateByCitaId);
+          const pagoDateSonora = parseToSonoraDateTime(pagoDateRaw);
+          const citaDateSonora = c.fecha_hora ? parseToSonoraDateTime(c.fecha_hora) : null;
+
+          return {
+            foto_perfil: fotoRaw ? (fotoRaw.startsWith('http') ? fotoRaw : `${STORAGE_PUBLIC_URL}${fotoRaw}`) : null,
+            id: c.id_cita,
+            fecha_hora_pago: pagoDateSonora?.toJSDate() || null,
+            fecha: pagoDateSonora ? pagoDateSonora.toFormat('dd/LL/yyyy') : 'Sin pago',
+            hora: pagoDateSonora ? pagoDateSonora.toFormat('hh:mm a') : '--:--',
+            fecha_cita: citaDateSonora ? citaDateSonora.toFormat('dd/LL/yyyy') : 'Sin fecha',
+            hora_cita: citaDateSonora ? citaDateSonora.toFormat('hh:mm a') : '--:--',
+            estado: c.estado,
+            paciente: {
+              nombre: c.paciente_nombre || 'Sin nombre',
+              apellido: c.paciente_apellido || '',
+              email: c.paciente_correo || 'Sin email'
+            },
+            pagada: c.pago_estado === 'completado',
+            monto: c.pago_estado === 'completado' ? Number(c.pago_monto || 0) : tarifa
+          };
+        });
 
         setCitas(citasFormateadas);
         setFilteredCitas(citasFormateadas);
 
         const ingresos = citasFormateadas.reduce((acc, c) => acc + (c.pagada ? c.monto : 0), 0);
-        // Corrección: suma SOLO los montos de citas pendientes (no pagadas)
         const pendientes = citasFormateadas.reduce((acc, c) => acc + (!c.pagada ? c.monto : 0), 0);
 
-        const now = new Date();
-        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        const citasMes = citasFormateadas.filter(c => c.fecha_hora >= monthStart).length;
+        const monthStart = DateTime.now().setZone(SONORA_TIMEZONE).startOf('month').toJSDate();
+        const citasMes = citasFormateadas.filter(c => c.pagada && c.fecha_hora_pago && c.fecha_hora_pago >= monthStart).length;
 
         setIngresosTotales(ingresos);
         setPendientesCobro(pendientes);
         setCitasEsteMes(citasMes);
+        dbgOk(`GestionPagos cargada: ${citasFormateadas.length} pagos`);
 
       } catch (err: any) {
-        console.error('Error cargando pagos:', err.message);
+        dbgError('GestionPagos fetchPagos error', err);
+        console.error('[NutriU] GestionPagos error:', err?.message ?? err);
         toast.error('No se pudieron cargar los pagos');
       } finally {
+        clearTimeout(timeoutId);
         setLoading(false);
+        dbgGroupEnd();
       }
     };
 
     fetchPagos();
   }, [user?.nutriologoId]);
+  const filterPagosByDate = (dateStr: string) => {
+    if (!dateStr) return citas;
+    const selectedDay = DateTime.fromISO(dateStr, { zone: SONORA_TIMEZONE }).startOf('day');
+    const endOfDay = selectedDay.endOf('day');
+    const startUTC = selectedDay.toUTC().toISO();
+    const endUTC = endOfDay.toUTC().toISO();
 
-  // Filtrado por búsqueda
+    return citas.filter(c => {
+      if (!c.fecha_hora_pago) return false;
+      const pagoDate = new Date(c.fecha_hora_pago);
+      return pagoDate >= new Date(startUTC) && pagoDate <= new Date(endUTC);
+    });
+  };
   useEffect(() => {
+    let filtered = filterPagosByDate(selectedDate);
+
     if (!searchQuery.trim()) {
-      setFilteredCitas(citas);
+      setFilteredCitas(filtered);
       return;
     }
 
     const q = searchQuery.toLowerCase().trim();
-    const filtered = citas.filter(cita => {
+    filtered = filtered.filter(cita => {
       const nombreCompleto = `${cita.paciente.nombre} ${cita.paciente.apellido}`.toLowerCase();
       return nombreCompleto.includes(q) || cita.paciente.email?.toLowerCase().includes(q);
     });
 
     setFilteredCitas(filtered);
-  }, [searchQuery, citas]);
-
-  // Función para generar y descargar recibo en PDF (corregido con tus requisitos)
+  }, [searchQuery, citas, selectedDate]);
   const descargarRecibo = (cita: any) => {
+    if (!cita.pagada) {
+      toast.error('No se puede descargar el recibo hasta que el pago esté completado.');
+      return;
+    }
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' }); // ← VERTICAL (portrait)
 
     const verdePrincipal = [46, 139, 87];      // #2E8B57
@@ -274,13 +389,8 @@ export function GestionPagos() {
     const verdeHeader = [232, 245, 233];       // #E8F5E9 (header suave)
     const grisOscuro = [26, 48, 38];           // #1A3026 (texto principal)
     const grisMedio = [75, 85, 99];            // #4B5563 (subtítulos)
-
-<<<<<<< HEAD
-    // Header con fondo verde claro y logo
     doc.setFillColor(...verdeClaro);
     doc.rect(0, 0, 210, 50, 'F');
-
-    // Logo centrado arriba
     const logoWidth = 60;
     const logoHeight = 30;
     doc.addImage(
@@ -291,39 +401,17 @@ export function GestionPagos() {
       logoWidth,
       logoHeight
     );
-
-    // Título del recibo
     doc.setFontSize(24);
     doc.setTextColor(...verdePrincipal);
-=======
-    // Header
-    doc.setFillColor(verde[0], verde[1], verde[2]);
-    doc.rect(0, 0, 210, 40, 'F');
-    doc.setFontSize(22);
-    doc.setTextColor(255);
->>>>>>> aae5ee8c31175ff24da8ee04daf680452f26f2c8
     doc.setFont('helvetica', 'bold');
     doc.text('RECIBO DE PAGO', 105, 55, { align: 'center' });
-
-    // Subtítulo
     doc.setFontSize(12);
-<<<<<<< HEAD
     doc.setTextColor(...grisMedio);
     doc.text('NutriU - Nutrición Personalizada', 105, 62, { align: 'center' });
-
-    // Sección de información del nutriólogo (separada y arriba)
     doc.setFontSize(11);
     doc.setTextColor(...grisOscuro);
+    doc.setFont('helvetica', 'normal');
     let y = 80;
-=======
-    doc.setTextColor(grisOscuro[0], grisOscuro[1], grisOscuro[2]);
-    let y = 55;
-    doc.text(`Nutriólogo: ${user?.nombre || 'Jose C'}`, 20, y); y += 8;
-    doc.text(`Paciente: ${cita.paciente.nombre} ${cita.paciente.apellido}`, 20, y); y += 8;
-    doc.text(`Email: ${cita.paciente.email}`, 20, y); y += 8;
-    doc.text(`Fecha y Hora: ${cita.fecha} ${cita.hora}`, 20, y); y += 12;
->>>>>>> aae5ee8c31175ff24da8ee04daf680452f26f2c8
-
     doc.setFont('helvetica', 'bold');
     doc.text('Nutriólogo:', 20, y);
     doc.setFont('helvetica', 'normal');
@@ -338,41 +426,28 @@ export function GestionPagos() {
     doc.text('Teléfono:', 20, y);
     doc.setFont('helvetica', 'normal');
     doc.text('+52 (653) 536 7647', 60, y); y += 12;
-
-    // Sección de información del paciente (separada)
     doc.setFont('helvetica', 'bold');
     doc.text('Paciente:', 20, y);
     doc.setFont('helvetica', 'normal');
     doc.text(`${cita.paciente.nombre} ${cita.paciente.apellido}`, 60, y); y += 8;
 
     doc.setFont('helvetica', 'bold');
-    doc.text('Email del paciente:', 20, y);
+    doc.text('Email:', 20, y);
     doc.setFont('helvetica', 'normal');
     doc.text(`${cita.paciente.email}`, 60, y); y += 12;
-
-    // Fecha y hora vertical (separadas en líneas)
     doc.setFont('helvetica', 'bold');
-    doc.text('Fecha:', 20, y);
+    doc.text('Fecha de cita:', 20, y);
     doc.setFont('helvetica', 'normal');
-    doc.text(`${cita.fecha}`, 60, y); y += 8;
+    doc.text(`${cita.fecha_cita || cita.fecha}`, 60, y); y += 8;
 
     doc.setFont('helvetica', 'bold');
-    doc.text('Hora:', 20, y);
+    doc.text('Hora de cita:', 20, y);
     doc.setFont('helvetica', 'normal');
-    doc.text(`${cita.hora}`, 60, y); y += 12;
-
-    // Monto destacado (siempre el monto real)
+    doc.text(`${cita.hora_cita || cita.hora}`, 60, y); y += 12;
     doc.setFontSize(16);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(...verdePrincipal);
-    doc.text(`Monto total: $${cita.monto.toLocaleString('es-MX')}`, 20, y); y += 12;
-
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...grisOscuro);
-    doc.text(`Estado: ${cita.pagada ? 'PAGADO' : 'PENDIENTE'}`, 20, y); y += 15;
-
-    // Footer profesional (igual que en el PDF de dietas)
+    doc.text(`Monto total: $${cita.monto.toLocaleString('es-MX')}`, 20, y); y += 15;
     const finalY = doc.internal.pageSize.height - 40;
     doc.setFontSize(10);
     doc.setTextColor(...grisMedio);
@@ -381,9 +456,16 @@ export function GestionPagos() {
     doc.text('Av. Kino y Calle 7 #1/2 Col. Médica, San Luis Río Colorado, Sonora', 105, finalY + 14, { align: 'center' });
     doc.text('@nutlotbhm', 105, finalY + 21, { align: 'center' });
 
-    // Descarga
-    doc.save(`Recibo_${cita.id}_${cita.fecha.replace(/\//g, '-')}_${cita.paciente.nombre || 'Paciente'}.pdf`);
-    toast.success('Recibo generado y descargado');
+    const blob = doc.output('blob');
+    const previewUrl = URL.createObjectURL(blob);
+    const previewLink = document.createElement('a');
+    previewLink.href = previewUrl;
+    previewLink.target = '_blank';
+    previewLink.rel = 'noopener';
+    previewLink.click();
+    setTimeout(() => URL.revokeObjectURL(previewUrl), 60 * 60 * 1000);
+
+    toast.success('Vista previa del recibo abierta. Descárgalo desde el visor si lo deseas.');
   };
 
   if (loading) {
@@ -393,8 +475,6 @@ export function GestionPagos() {
   return (
     <div className="min-h-screen p-6 md:p-10 font-sans bg-[#F8FFF9] space-y-10">
       <div className="max-w-7xl mx-auto space-y-10">
-        
-        {/* Encabezado */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 px-2">
           <div>
             <div className="inline-flex flex-col items-start">
@@ -408,8 +488,6 @@ export function GestionPagos() {
             </p>
           </div>
         </div>
-
-        {/* Resumen de Ingresos */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <Card className="rounded-[2.5rem] border-2 border-[#D1E8D5] bg-white shadow-sm overflow-hidden">
             <CardContent className="p-8 flex items-center gap-6">
@@ -447,19 +525,75 @@ export function GestionPagos() {
             </CardContent>
           </Card>
         </div>
-
-        {/* Buscador Estilizado (igual que en GestionDietas) */}
-        <div className="relative max-w-2xl">
-          <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-[#2E8B57]" />
-          <Input
-            placeholder="BUSCAR PACIENTE POR NOMBRE O EMAIL..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-14 py-5 bg-white border-2 border-[#D1E8D5] rounded-2xl focus:border-[#2E8B57] outline-none text-xs md:text-sm font-black tracking-widest uppercase placeholder:text-gray-400 shadow-sm transition-all"
-          />
+        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
+          <div className="relative flex-1">
+            <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-[#2E8B57]" />
+            <Input
+              placeholder="BUSCAR PACIENTE POR NOMBRE O EMAIL..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-14 py-5 bg-white border-2 border-[#D1E8D5] rounded-2xl focus:border-[#2E8B57] outline-none text-xs md:text-sm font-black tracking-widest uppercase placeholder:text-gray-400 shadow-sm transition-all"
+            />
+          </div>
+          <Dialog open={isDateModalOpen} onOpenChange={setIsDateModalOpen}>
+            <DialogTrigger asChild>
+              <Button
+                className={`py-5 px-6 rounded-2xl font-black text-xs uppercase tracking-widest transition-all whitespace-nowrap ${
+                  selectedDate
+                    ? 'bg-[#2E8B57] text-white border-2 border-[#2E8B57]'
+                    : 'bg-white text-[#2E8B57] border-2 border-[#D1E8D5] hover:border-[#2E8B57]'
+                }`}
+              >
+                <Calendar className="mr-2 h-5 w-5" />
+                {selectedDate ? DateTime.fromISO(selectedDate).toFormat('dd/MM/yyyy') : 'Filtrar por fecha'}
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-sm rounded-3xl">
+              <DialogHeader>
+                <DialogTitle className="text-[#2E8B57] font-black uppercase">Seleccionar Fecha</DialogTitle>
+              </DialogHeader>
+              <div className="flex flex-col gap-4">
+                <DateCalendar
+                  mode="single"
+                  selected={draftDateObject}
+                  onSelect={(date) => {
+                    if (date) {
+                      const year = date.getFullYear();
+                      const month = String(date.getMonth() + 1).padStart(2, '0');
+                      const day = String(date.getDate()).padStart(2, '0');
+                      const isoDate = `${year}-${month}-${day}`;
+                      setDraftSelectedDate(isoDate);
+                    }
+                  }}
+                  disabled={(date) => date > todayDateObject}
+                  className="rounded-2xl border-2 border-[#D1E8D5]"
+                />
+                <div className="flex gap-3 justify-end">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setSelectedDate('');
+                      setDraftSelectedDate('');
+                      setIsDateModalOpen(false);
+                    }}
+                    className="rounded-xl border-2 border-[#D1E8D5] text-[#2E8B57] font-black"
+                  >
+                    Limpiar
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setSelectedDate(draftSelectedDate);
+                      setIsDateModalOpen(false);
+                    }}
+                    className="bg-[#2E8B57] text-white rounded-xl font-black hover:bg-[#1A3026]"
+                  >
+                    Aplicar
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
-
-        {/* Tabla de Transacciones */}
         <div className="bg-white rounded-[2.5rem] border-2 border-[#D1E8D5] shadow-sm overflow-hidden">
           <div className="p-8 border-b border-[#F0FFF4] flex items-center justify-between bg-[#F8FFF9]/50">
             <h3 className="text-base md:text-lg font-[900] text-[#1A3026] uppercase tracking-[2px]">
@@ -473,7 +607,7 @@ export function GestionPagos() {
               <TableHeader>
                 <TableRow className="border-none hover:bg-transparent px-4">
                   <TableHead className="pl-8 text-xs md:text-sm font-black uppercase text-gray-400 tracking-wider">Paciente</TableHead>
-                  <TableHead className="text-xs md:text-sm font-black uppercase text-gray-400 tracking-wider">Fecha y Hora</TableHead>
+                  <TableHead className="text-xs md:text-sm font-black uppercase text-gray-400 tracking-wider">Fecha y Hora de Pago</TableHead>
                   <TableHead className="text-xs md:text-sm font-black uppercase text-gray-400 tracking-wider">Monto</TableHead>
                   <TableHead className="text-xs md:text-sm font-black uppercase text-gray-400 tracking-wider">Estado</TableHead>
                   <TableHead className="text-right pr-8 text-xs md:text-sm font-black uppercase text-gray-400 tracking-wider">Acciones</TableHead>
@@ -502,7 +636,9 @@ export function GestionPagos() {
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="font-bold text-gray-600 text-sm md:text-base uppercase">{cita.fecha} • {cita.hora}</TableCell>
+                    <TableCell className={`font-bold text-sm md:text-base uppercase ${cita.pagada ? 'text-gray-600' : 'text-gray-400'}`}>
+                      {cita.fecha} • {cita.hora}
+                    </TableCell>
                     <TableCell className="font-[900] text-[#1A3026] text-base md:text-lg">${cita.monto.toLocaleString('es-MX')}</TableCell>
                     <TableCell>
                       <Badge className={`
@@ -517,7 +653,9 @@ export function GestionPagos() {
                         variant="ghost" 
                         size="sm"
                         onClick={() => descargarRecibo(cita)}
-                        className="text-[#2E8B57] hover:bg-[#F0FFF4] hover:text-[#1A3026] rounded-xl group-hover:scale-110 transition-transform"
+                        disabled={!cita.pagada}
+                        className={`text-[#2E8B57] hover:bg-[#F0FFF4] hover:text-[#1A3026] rounded-xl group-hover:scale-110 transition-transform ${!cita.pagada ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        title={!cita.pagada ? 'Solo disponible para pagos completados' : 'Ver recibo (vista previa PDF)'}
                       >
                         <Download size={18} />
                       </Button>

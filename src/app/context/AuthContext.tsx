@@ -1,7 +1,7 @@
-// src/app/context/AuthContext.tsx
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { toast } from 'sonner';
+import { dbgGroup, dbgGroupEnd, dbgLog, dbgOk, dbgWarn, dbgError } from '@/utils/debug';
 
 export interface User {
   id: string;
@@ -25,89 +25,159 @@ interface AuthContextType {
   updateProfile: (data: Partial<User>) => Promise<void>;
   loading: boolean;
 }
-
-// ¡Export nombrado aquí!
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const AUTH_MAX_WAIT_MS = 8000;
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${label} timeout after ${ms}ms`));
+    }, ms);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
-    if (isInitialized) return;
-    setIsInitialized(true);
+    let restoredFromCache = false;
+    let cachedUserId: string | null = null;
 
     const cached = localStorage.getItem('nutriu_user');
     if (cached) {
       try {
         const parsed = JSON.parse(cached) as User;
         setUser(parsed);
-        console.log('[Auth] Restaurado desde caché → rol:', parsed.rol);
+        restoredFromCache = true;
+        cachedUserId = parsed.id;
+        setLoading(false);
       } catch (e) {
-        console.warn('[Auth] Caché corrupto, eliminando...');
         localStorage.removeItem('nutriu_user');
       }
     }
 
     const initializeAuth = async () => {
-      console.log('[Auth] Inicializando autenticación...');
-      setLoading(true);
+      dbgGroup('auth', `initializeAuth — restoredFromCache=${restoredFromCache}`);
+      if (!restoredFromCache) {
+        setLoading(true);
+      }
 
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) throw error;
+        dbgLog('Llamando supabase.auth.getSession()...');
+        const { data: { session }, error } = await withTimeout(
+          supabase.auth.getSession(),
+          AUTH_MAX_WAIT_MS,
+          'getSession'
+        );
+        if (error) {
+          dbgError('getSession() error', error);
+          throw error;
+        }
 
         if (session?.user) {
-          console.log('[Auth] Sesión activa detectada, cargando perfil...');
-          await fetchUserData(session.user.id);
+          dbgOk(`Sesión activa — userId=${session.user.id}`);
+          const sameUserAsCache = restoredFromCache && cachedUserId === session.user.id;
+          dbgLog(`sameUserAsCache=${sameUserAsCache}`);
+          if (sameUserAsCache) {
+            withTimeout(fetchUserData(session.user.id, 0, true), AUTH_MAX_WAIT_MS, 'fetchUserData(background)').catch((err) => {
+              dbgError('fetchUserData background error', err);
+            });
+          } else {
+            await withTimeout(fetchUserData(session.user.id), AUTH_MAX_WAIT_MS, 'fetchUserData');
+          }
         } else {
-          console.log('[Auth] No hay sesión activa');
+          dbgWarn('getSession() → sin sesión activa (no logueado)');
+          if (restoredFromCache && cachedUserId) {
+            dbgWarn('Conservando sesión cacheada temporalmente y revalidando perfil en background');
+            withTimeout(fetchUserData(cachedUserId, 0, true), AUTH_MAX_WAIT_MS, 'fetchUserData(cache-revalidate)').catch((err) => {
+              dbgError('cache-revalidate error', err);
+            });
+          } else {
+            setUser(null);
+            localStorage.removeItem('nutriu_user');
+          }
+        }
+      } catch (err: any) {
+        dbgError('initializeAuth catch', err);
+        if (restoredFromCache) {
+          dbgWarn('initializeAuth falló, pero se conserva usuario cacheado para evitar redirect innecesario');
+        } else {
           setUser(null);
           localStorage.removeItem('nutriu_user');
         }
-      } catch (err: any) {
-        console.error('[Auth] Error al inicializar:', err.message);
-        setUser(null);
-        localStorage.removeItem('nutriu_user');
       } finally {
         setLoading(false);
+        dbgGroupEnd();
       }
     };
 
     initializeAuth();
 
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('[Auth] Cambio de estado detectado:', event);
-
+      dbgLog(`onAuthStateChange: event=${event}`, session?.user?.id ?? null);
       if (event === 'SIGNED_IN' && session?.user) {
-        await fetchUserData(session.user.id);
+        try {
+          await withTimeout(fetchUserData(session.user.id), AUTH_MAX_WAIT_MS, 'fetchUserData(SIGNED_IN)');
+        } catch (err) {
+          dbgError('SIGNED_IN fetchUserData timeout/error', err);
+          setLoading(false);
+        }
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
         localStorage.removeItem('nutriu_user');
       } else if (event === 'PASSWORD_RECOVERY') {
-        console.log('[Auth] Modo recuperación de contraseña activado');
       }
     });
 
     return () => {
       authListener.subscription.unsubscribe();
     };
-  }, [isInitialized]);
+  }, []);
 
-  const fetchUserData = async (userId: string) => {
-    console.log('[fetchUserData] Cargando perfil para UID:', userId);
-
+  const fetchUserData = async (userId: string, retryCount = 0, preserveExistingUser = false): Promise<boolean> => {
+    dbgGroup('auth', `fetchUserData — userId=${userId} retry=${retryCount}`);
     try {
-      const { data: adminData, error: adminError } = await supabase
-        .from('administradores')
-        .select('id_admin, nombre, apellido, correo, numero_celular')
-        .eq('id_auth_user', userId)
-        .maybeSingle();
+      dbgLog('Consultando administradores + nutriologos en paralelo...');
+      const [adminResponse, nutriResponse] = await Promise.all([
+        supabase
+          .from('administradores')
+          .select('id_admin, nombre, apellido, correo, numero_celular')
+          .eq('id_auth_user', userId)
+          .maybeSingle(),
+        supabase
+          .from('nutriologos')
+          .select('id_nutriologo, nombre, apellido, correo, numero_celular, tarifa_consulta, nombre_usuario, descripcion, foto_perfil')
+          .eq('id_auth_user', userId)
+          .maybeSingle(),
+      ]);
 
-      if (adminError) throw adminError;
+      const { data: adminData, error: adminError } = adminResponse;
+      const { data: nutriData, error: nutriError } = nutriResponse;
+
+      if (adminError) {
+        dbgError('Error query administradores', adminError);
+        throw adminError;
+      }
+      if (nutriError) {
+        dbgError('Error query nutriologos', nutriError);
+        throw nutriError;
+      }
+
+      dbgLog('adminData', adminData);
+      dbgLog('nutriData', nutriData);
 
       if (adminData) {
+        dbgOk(`Perfil admin encontrado — id_admin=${adminData.id_admin}`);
         const newUser: User = {
           id: userId,
           adminId: adminData.id_admin.toString(),
@@ -120,19 +190,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
         setUser(newUser);
         localStorage.setItem('nutriu_user', JSON.stringify(newUser));
-        console.log('[fetchUserData] Administrador encontrado');
-        return;
+        dbgGroupEnd();
+        return true;
       }
 
-      const { data: nutriData, error: nutriError } = await supabase
-        .from('nutriologos')
-        .select('id_nutriologo, nombre, apellido, correo, numero_celular, tarifa_consulta, nombre_usuario, descripcion, foto_perfil')
-        .eq('id_auth_user', userId)
-        .maybeSingle();
-
-      if (nutriError) throw nutriError;
-
       if (nutriData) {
+        dbgOk(`Perfil nutriólogo encontrado — id=${nutriData.id_nutriologo}, usuario=${nutriData.nombre_usuario}`);
         const newUser: User = {
           id: userId,
           nutriologoId: nutriData.id_nutriologo.toString(),
@@ -148,35 +211,72 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
         setUser(newUser);
         localStorage.setItem('nutriu_user', JSON.stringify(newUser));
-        console.log('[fetchUserData] Nutriólogo encontrado');
-        return;
+        dbgGroupEnd();
+        return true;
       }
 
-      console.warn('[fetchUserData] No se encontró perfil asociado');
-      toast.warning('No se encontró perfil asociado a esta cuenta');
-      setUser(null);
-      localStorage.removeItem('nutriu_user');
+      dbgWarn('No se encontró admin NI nutriólogo para userId=' + userId);
+      if (!preserveExistingUser) {
+        toast.warning('No se encontró perfil asociado a esta cuenta');
+        setUser(null);
+        localStorage.removeItem('nutriu_user');
+      } else {
+        dbgWarn('Se conserva usuario cacheado (preserveExistingUser=true)');
+      }
+      dbgGroupEnd();
+      return false;
     } catch (error: any) {
-      console.error('[fetchUserData] Error:', error.message);
-      toast.error('Error al cargar el perfil: ' + (error.message || 'Intenta nuevamente'));
-      setUser(null);
-      localStorage.removeItem('nutriu_user');
+      const errorMessage = String(error?.message || '');
+      const isAbortError = error?.name === 'AbortError' || /aborted/i.test(errorMessage);
+
+      if (isAbortError && retryCount < 2) {
+        dbgWarn(`AbortError en fetchUserData — reintentando (${retryCount + 1})...`);
+        await new Promise(resolve => setTimeout(resolve, 200));
+        return fetchUserData(userId, retryCount + 1, preserveExistingUser);
+      }
+
+      if (isAbortError) {
+        dbgError('AbortError agotado — devolviendo false');
+        dbgGroupEnd();
+        return false;
+      }
+      dbgError('fetchUserData catch', error);
+      if (!preserveExistingUser) {
+        toast.error('Error al cargar el perfil: ' + (error.message || 'Intenta nuevamente'));
+        setUser(null);
+        localStorage.removeItem('nutriu_user');
+      } else {
+        dbgWarn('Error en refresh de perfil, se conserva usuario cacheado');
+      }
+      dbgGroupEnd();
+      return false;
     }
   };
 
   const login = async (email: string, password: string): Promise<boolean> => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await withTimeout(
+        supabase.auth.signInWithPassword({ email, password }),
+        AUTH_MAX_WAIT_MS,
+        'signInWithPassword'
+      );
       if (error) throw error;
 
       if (data.user) {
-        await fetchUserData(data.user.id);
+        const profileLoaded = await withTimeout(
+          fetchUserData(data.user.id),
+          AUTH_MAX_WAIT_MS,
+          'fetchUserData(login)'
+        );
+        if (!profileLoaded) {
+          await supabase.auth.signOut();
+          return false;
+        }
         return true;
       }
       return false;
     } catch (error: any) {
-      console.error('[login] Error:', error.message);
       toast.error('Error al iniciar sesión: ' + (error.message || 'Credenciales inválidas'));
       return false;
     } finally {
@@ -191,7 +291,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem('nutriu_user');
       toast.success('Sesión cerrada correctamente');
     } catch (error: any) {
-      console.error('[logout] Error:', error.message);
       toast.error('Error al cerrar sesión');
     }
   };
@@ -231,7 +330,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem('nutriu_user', JSON.stringify(updatedUser));
       toast.success('Perfil actualizado correctamente');
     } catch (error: any) {
-      console.error('[updateProfile] Error:', error.message);
       toast.error('No se pudo actualizar el perfil: ' + (error.message || 'Intenta de nuevo'));
     }
   };

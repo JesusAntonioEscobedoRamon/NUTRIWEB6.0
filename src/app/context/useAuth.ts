@@ -1,4 +1,3 @@
-// src/app/context/useAuth.ts
 import { useContext } from 'react';
 import { AuthContext } from './AuthContext';  // ← ahora sí existe el export
 

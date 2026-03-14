@@ -7,9 +7,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/app/components/ui/dialog';
 import { Progress } from '@/app/components/ui/progress';
 import { Avatar, AvatarFallback, AvatarImage } from '@/app/components/ui/avatar';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
 import { useAuth } from '@/app/context/useAuth';
 import { supabase } from '@/app/context/supabaseClient';
 import { toast } from 'sonner';
+import { dbgGroup, dbgGroupEnd, dbgLog, dbgOk, dbgWarn, dbgError } from '@/utils/debug';
 import { 
   Trophy, 
   Star, 
@@ -18,7 +20,11 @@ import {
   Target, 
   Plus, 
   TrendingUp,
-  Search
+  Search,
+  Gift,
+  Percent,
+  Edit,
+  Trash2
 } from 'lucide-react';
 
 const STORAGE_PUBLIC_URL = 'https://hthnkzwjotwqhvjgqhfv.supabase.co/storage/v1/object/public/perfiles/';
@@ -27,6 +33,8 @@ const premioPlataImg = new URL('../../../../assets/premioplata.png', import.meta
 const premioOroImg = new URL('../../../../assets/premiooro.png', import.meta.url).href;
 const premioDiamanteImg = new URL('../../../../assets/premiodiamante.png', import.meta.url).href;
 
+const formatPoints = (value: number) => Number(value || 0).toLocaleString('es-MX');
+
 const getPremioImageByNivel = (nivel: string) => {
   if (nivel === 'Bronce') return premioBronceImg;
   if (nivel === 'Plata') return premioPlataImg;
@@ -34,10 +42,6 @@ const getPremioImageByNivel = (nivel: string) => {
   if (nivel === 'Diamante') return premioDiamanteImg;
   return null;
 };
-
-// ────────────────────────────────────────────────────────────────
-// LÓGICA DE GAMIFICACIÓN (ajustada: sin rango <100 pts, nombres como "Bronce")
-// ────────────────────────────────────────────────────────────────
 const getNivelPaciente = (puntos: number) => {
   if (puntos >= 10000) return { nivel: 'Diamante', color: 'text-blue-600', border: 'border-blue-200', bgColor: 'bg-blue-50', icon: Crown, level: 'Leyenda' };
   if (puntos >= 5000) return { nivel: 'Oro', color: 'text-yellow-600', border: 'border-yellow-200', bgColor: 'bg-yellow-50', icon: Award, level: 'Avanzado' };
@@ -54,8 +58,6 @@ const getProgresoNivel = (puntos: number) => {
   if (puntos >= 100) return ((puntos - 100) / 900) * 100;
   return 0;
 };
-
-// Componente de carga animado (sin cambios)
 function AnimatedLoadingScreen() {
   const iconRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
@@ -153,6 +155,8 @@ function AnimatedLoadingScreen() {
 
 export function Gamificacion() {
   const { user } = useAuth();
+  const ENABLE_CANJES_MODULE = true;
+  const USE_LEGACY_REWARDS_SCHEMA = true;
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedPaciente, setSelectedPaciente] = useState('');
   const [puntosAsignar, setPuntosAsignar] = useState('');
@@ -160,16 +164,187 @@ export function Gamificacion() {
   const [filteredPacientes, setFilteredPacientes] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState(''); // ← Barra principal
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('gamificacion'); // 'gamificacion' | 'canjes'
+  const [rangos, setRangos] = useState<any[]>([]);
+  const [canjes, setCanjes] = useState<any[]>([]);
+  const [isRangoDialogOpen, setIsRangoDialogOpen] = useState(false);
+  const [isCanjeDialogOpen, setIsCanjeDialogOpen] = useState(false);
+  const [editingRango, setEditingRango] = useState<any>(null);
+  const [editingCanje, setEditingCanje] = useState<any>(null);
+  const [rangoFormData, setRangoFormData] = useState({
+    nombre_rango: '',
+    puntos_minimo: '',
+    puntos_maximo: '',
+    descripcion: ''
+  });
+  const [canjeFormData, setCanjeFormData] = useState({
+    id_rango: '',
+    nombre_canje: '',
+    tipo_canje: 'descuento',
+    valor_descuento: '',
+    cantidad_consultas: '1',
+    descripcion: '',
+    monto_minimo_consulta: ''
+  });
+  const [loadingCanjes, setLoadingCanjes] = useState(false);
 
   useEffect(() => {
     if (user?.nutriologoId) {
       fetchMisPacientes();
+      if (ENABLE_CANJES_MODULE) {
+        fetchRangosYCanjes();
+      }
+    } else {
+      // user aún no cargado o sin nutriologoId → no quedarse colgado en loading
+      setLoading(false);
     }
   }, [user]);
 
-  const fetchMisPacientes = async () => {
-    setLoading(true);
+  const fetchRangosYCanjes = async () => {
+    if (!ENABLE_CANJES_MODULE) {
+      setRangos([]);
+      setCanjes([]);
+      return;
+    }
+
+    setLoadingCanjes(true);
     try {
+      if (USE_LEGACY_REWARDS_SCHEMA) {
+        setRangos([]);
+
+        const { data: recompensasData, error: errRecompensas } = await supabase
+          .from('recompensas')
+          .select('*')
+          .eq('activa', true)
+          .order('puntos_requeridos', { ascending: true });
+
+        if (errRecompensas) throw errRecompensas;
+
+        const mappedCanjes = (recompensasData || []).map((recompensa: any) => ({
+          id_canje: recompensa.id_recompensa,
+          nombre_canje: recompensa.nombre,
+          tipo_canje: recompensa.tipo_recompensa === 'descuento' ? 'descuento' : 'consulta_gratis',
+          valor_descuento: null,
+          cantidad_consultas: 1,
+          descripcion: recompensa.descripcion,
+          monto_minimo_consulta: null,
+          puntos_requeridos: Number(recompensa.puntos_requeridos || 0),
+          rangos_puntos: null,
+        }));
+
+        setCanjes(mappedCanjes);
+        return;
+      }
+
+      const { data: rangosData, error: errRangos } = await supabase
+        .from('rangos_puntos')
+        .select('*')
+        .eq('id_nutriologo', user.nutriologoId)
+        .eq('activo', true)
+        .order('puntos_minimo', { ascending: true });
+
+      if (errRangos) throw errRangos;
+      setRangos(rangosData || []);
+
+      const { data: canjesData, error: errCanjes } = await supabase
+        .from('canjes')
+        .select('*, rangos_puntos(nombre_rango, puntos_minimo, puntos_maximo)')
+        .eq('id_nutriologo', user.nutriologoId)
+        .eq('activo', true)
+        .order('creado_en', { ascending: false });
+
+      if (errCanjes) throw errCanjes;
+      setCanjes(canjesData || []);
+    } catch (error: any) {
+      toast.error('Error cargando rangos y canjes');
+    } finally {
+      setLoadingCanjes(false);
+    }
+  };
+
+  const awardUnlockedCanjes = async (pacienteId: number, puntosTotales: number) => {
+    if (!ENABLE_CANJES_MODULE) {
+      return [];
+    }
+
+    if (USE_LEGACY_REWARDS_SCHEMA) {
+      return [];
+    }
+
+    if (!user?.nutriologoId) {
+      return [];
+    }
+
+    const { data: rangosActivos, error: rangosError } = await supabase
+      .from('rangos_puntos')
+      .select('id_rango, nombre_rango, puntos_minimo, puntos_maximo')
+      .eq('id_nutriologo', user.nutriologoId)
+      .eq('activo', true)
+      .order('puntos_minimo', { ascending: true });
+
+    if (rangosError) throw rangosError;
+
+    const rangoActual = (rangosActivos || []).find((rango) => (
+      puntosTotales >= Number(rango.puntos_minimo || 0)
+      && (rango.puntos_maximo === null || puntosTotales <= Number(rango.puntos_maximo))
+    ));
+
+    if (!rangoActual) {
+      return [];
+    }
+
+    const { data: canjesRango, error: canjesError } = await supabase
+      .from('canjes')
+      .select('id_canje, nombre_canje')
+      .eq('id_nutriologo', user.nutriologoId)
+      .eq('id_rango', rangoActual.id_rango)
+      .eq('activo', true);
+
+    if (canjesError) throw canjesError;
+
+    const awardedNames: string[] = [];
+
+    for (const canje of (canjesRango || [])) {
+      const { data: existingCanje } = await supabase
+        .from('canjes_paciente')
+        .select('id_canje_paciente')
+        .eq('id_paciente', pacienteId)
+        .eq('id_canje', canje.id_canje)
+        .maybeSingle();
+
+      if (existingCanje?.id_canje_paciente) {
+        continue;
+      }
+
+      const { error: insertCanjeError } = await supabase
+        .from('canjes_paciente')
+        .insert({
+          id_paciente: pacienteId,
+          id_canje: canje.id_canje,
+          id_nutriologo: user.nutriologoId,
+          estado: 'disponible',
+        });
+
+      if (!insertCanjeError) {
+        awardedNames.push(canje.nombre_canje);
+      }
+    }
+
+    return awardedNames;
+  };
+
+  const fetchMisPacientes = async () => {
+    dbgGroup('screen', `Gamificacion — nutriologoId=${user?.nutriologoId}`);
+    setLoading(true);
+
+    const timeoutId = setTimeout(() => {
+      dbgError('Gamificacion: timeout 15s — desbloqueo forzado');
+      console.error('[NutriU] Gamificacion: timeout esperando datos de Supabase.');
+      setLoading(false);
+    }, 15000);
+
+    try {
+      dbgLog('Cargando relaciones paciente_nutriologo...');
       const { data: relaciones, error: errRel } = await supabase
         .from('paciente_nutriologo')
         .select('id_paciente')
@@ -211,17 +386,19 @@ export function Gamificacion() {
         puntos: puntos.find(pt => pt.id_paciente === p.id_paciente)?.puntos_totales || 0,
       }));
 
+      dbgOk(`Gamificacion pacientes cargados: ${pacientesConPuntos.length}`);
       setMisPacientes(pacientesConPuntos);
       setFilteredPacientes(pacientesConPuntos);
     } catch (error: any) {
-      console.error('[Gamificacion] Error cargando pacientes:', error.message);
+      dbgError('fetchMisPacientes error', error);
+      console.error('[NutriU] Gamificacion error:', error?.message ?? error);
       toast.error('No se pudieron cargar los pacientes');
     } finally {
+      clearTimeout(timeoutId);
       setLoading(false);
+      dbgGroupEnd();
     }
   };
-
-  // Filtrado para la pantalla principal (ranking y metas)
   const pacientesFiltrados = misPacientes.filter(paciente =>
     !searchQuery ||
     paciente.nombre.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -230,8 +407,6 @@ export function Gamificacion() {
   );
 
   const pacientesOrdenados = [...pacientesFiltrados].sort((a, b) => b.puntos - a.puntos);
-
-  // Búsqueda solo para el diálogo de asignar puntos
   const handleDialogSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     const query = e.target.value.toLowerCase().trim();
     const filtered = misPacientes.filter(paciente =>
@@ -285,6 +460,8 @@ export function Gamificacion() {
 
       if (errLog) throw errLog;
 
+      const canjesOtorgados = await awardUnlockedCanjes(pacienteId, nuevosPuntos);
+
       const nombreNutriologo = `${user?.nombre || ''} ${user?.apellido || ''}`.trim();
       const pacienteSeleccionado = misPacientes.find((p) => p.id === pacienteId);
       const nombrePaciente = pacienteSeleccionado
@@ -316,30 +493,352 @@ export function Gamificacion() {
         });
 
       if (notificationError) {
-        console.error('[Gamificacion] Error insertando notificación:', notificationError);
         toast.error(`Los puntos se asignaron, pero falló la notificación: ${notificationError.message || 'Intenta de nuevo'}`);
       }
 
-      toast.success(`${puntosNum} puntos asignados con éxito`);
+      const successMessage = canjesOtorgados.length > 0
+        ? `${puntosNum} puntos asignados y ${canjesOtorgados.length} canje(s) desbloqueado(s)`
+        : `${puntosNum} puntos asignados con éxito`;
+
+      toast.success(successMessage);
       setIsDialogOpen(false);
       setSelectedPaciente('');
       setPuntosAsignar('');
       fetchMisPacientes();
     } catch (error: any) {
-      console.error('[Gamificacion] Error asignando puntos:', error.message);
       toast.error('Error al asignar puntos');
     }
   };
 
-  if (loading) {
-    return <AnimatedLoadingScreen />;
-  }
+  const handleGuardarRango = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (USE_LEGACY_REWARDS_SCHEMA) {
+      toast.info('La gestión por rangos está deshabilitada. Se usan puntos requeridos por recompensa.');
+      return;
+    }
+    try {
+      const { nombre_rango, puntos_minimo, puntos_maximo, descripcion } = rangoFormData;
+      
+      if (!nombre_rango || !puntos_minimo) {
+        toast.error('Nombre y puntos mínimo son requeridos');
+        return;
+      }
+
+      const puntosMin = parseInt(puntos_minimo);
+      const puntosMax = puntos_maximo ? parseInt(puntos_maximo) : null;
+
+      if (isNaN(puntosMin) || puntosMin < 0) {
+        toast.error('Puntos mínimo debe ser un número válido');
+        return;
+      }
+
+      if (puntosMax && (isNaN(puntosMax) || puntosMax <= puntosMin)) {
+        toast.error('Puntos máximo debe ser mayor que mínimo');
+        return;
+      }
+
+      if (editingRango) {
+        const { error } = await supabase
+          .from('rangos_puntos')
+          .update({
+            nombre_rango,
+            puntos_minimo: puntosMin,
+            puntos_maximo: puntosMax,
+            descripcion: descripcion || null,
+            actualizado_en: new Date().toISOString()
+          })
+          .eq('id_rango', editingRango.id_rango);
+
+        if (error) throw error;
+        toast.success('Rango actualizado');
+      } else {
+        const { error } = await supabase
+          .from('rangos_puntos')
+          .insert({
+            id_nutriologo: user.nutriologoId,
+            nombre_rango,
+            puntos_minimo: puntosMin,
+            puntos_maximo: puntosMax,
+            descripcion: descripcion || null,
+            icono_nivel: nombre_rango.toLowerCase()
+          });
+
+        if (error) throw error;
+        toast.success('Rango creado');
+      }
+
+      setIsRangoDialogOpen(false);
+      setEditingRango(null);
+      setRangoFormData({ nombre_rango: '', puntos_minimo: '', puntos_maximo: '', descripcion: '' });
+      fetchRangosYCanjes();
+    } catch (error: any) {
+      toast.error('Error al guardar rango');
+    }
+  };
+
+  const handleEliminarRango = async (idRango: number) => {
+    if (USE_LEGACY_REWARDS_SCHEMA) {
+      toast.info('La gestión por rangos está deshabilitada en este esquema.');
+      return;
+    }
+    try {
+      const { error } = await supabase
+        .from('rangos_puntos')
+        .update({ activo: false })
+        .eq('id_rango', idRango);
+
+      if (error) throw error;
+      toast.success('Rango desactivado');
+      fetchRangosYCanjes();
+    } catch (error: any) {
+      toast.error('Error al desactivar rango');
+    }
+  };
+
+  const handleGuardarCanje = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const { id_rango, nombre_canje, tipo_canje, valor_descuento, cantidad_consultas, descripcion, monto_minimo_consulta } = canjeFormData;
+
+      if (USE_LEGACY_REWARDS_SCHEMA) {
+        const puntosRequeridos = parseInt(valor_descuento);
+        if (!nombre_canje || isNaN(puntosRequeridos) || puntosRequeridos < 0) {
+          toast.error('Nombre y puntos requeridos válidos son obligatorios');
+          return;
+        }
+
+        const tipoRecompensa = tipo_canje === 'descuento' ? 'descuento' : 'contenido';
+
+        if (editingCanje) {
+          const { error } = await supabase
+            .from('recompensas')
+            .update({
+              nombre: nombre_canje,
+              descripcion: descripcion || null,
+              tipo_recompensa: tipoRecompensa,
+              puntos_requeridos: puntosRequeridos,
+              activa: true,
+            })
+            .eq('id_recompensa', editingCanje.id_canje);
+
+          if (error) throw error;
+          toast.success('Canje actualizado');
+        } else {
+          const { error } = await supabase
+            .from('recompensas')
+            .insert({
+              nombre: nombre_canje,
+              descripcion: descripcion || null,
+              tipo_recompensa: tipoRecompensa,
+              puntos_requeridos: puntosRequeridos,
+              activa: true,
+            });
+
+          if (error) throw error;
+          toast.success('Canje creado');
+        }
+
+        setIsCanjeDialogOpen(false);
+        setEditingCanje(null);
+        setCanjeFormData({
+          id_rango: '',
+          nombre_canje: '',
+          tipo_canje: 'descuento',
+          valor_descuento: '',
+          cantidad_consultas: '1',
+          descripcion: '',
+          monto_minimo_consulta: ''
+        });
+        fetchRangosYCanjes();
+        return;
+      }
+
+      if (!id_rango || !nombre_canje) {
+        toast.error('Rango y nombre son requeridos');
+        return;
+      }
+
+      const rangoObj = rangos.find(r => r.id_rango === parseInt(id_rango));
+      if (!rangoObj) {
+        toast.error('Rango no válido');
+        return;
+      }
+
+      const dataToSend: any = {
+        id_nutriologo: user.nutriologoId,
+        id_rango: parseInt(id_rango),
+        nombre_canje,
+        tipo_canje: 'descuento',
+        descripcion: descripcion || null
+      };
+
+      const descuento = parseInt(valor_descuento);
+      if (isNaN(descuento) || descuento < 0 || descuento > 100) {
+        toast.error('Descuento debe estar entre 0-100%');
+        return;
+      }
+      dataToSend.valor_descuento = descuento;
+      dataToSend.cantidad_consultas = null;
+
+      if (monto_minimo_consulta) {
+        const montoMin = parseFloat(monto_minimo_consulta);
+        if (isNaN(montoMin) || montoMin <= 0) {
+          toast.error('Monto mínimo debe ser un número válido');
+          return;
+        }
+        dataToSend.monto_minimo_consulta = montoMin;
+      }
+
+      if (editingCanje) {
+        const { error } = await supabase
+          .from('canjes')
+          .update({
+            ...dataToSend,
+            actualizado_en: new Date().toISOString()
+          })
+          .eq('id_canje', editingCanje.id_canje);
+
+        if (error) throw error;
+        toast.success('Canje actualizado');
+      } else {
+        const { data: canjeCreado, error } = await supabase
+          .from('canjes')
+          .insert(dataToSend)
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        const pacientesElegibles = misPacientes.filter((paciente) => {
+          const puntosPaciente = Number(paciente.puntos || 0);
+          return (
+            puntosPaciente >= Number(rangoObj.puntos_minimo || 0)
+            && (rangoObj.puntos_maximo === null || rangoObj.puntos_maximo === undefined || puntosPaciente <= Number(rangoObj.puntos_maximo))
+          );
+        });
+
+        for (const paciente of pacientesElegibles) {
+          const { data: existingCanjePaciente } = await supabase
+            .from('canjes_paciente')
+            .select('id_canje_paciente')
+            .eq('id_paciente', paciente.id)
+            .eq('id_canje', canjeCreado.id_canje)
+            .maybeSingle();
+
+          if (existingCanjePaciente?.id_canje_paciente) {
+            continue;
+          }
+
+          await supabase
+            .from('canjes_paciente')
+            .insert({
+              id_paciente: paciente.id,
+              id_canje: canjeCreado.id_canje,
+              id_nutriologo: user.nutriologoId,
+              estado: 'disponible',
+            });
+        }
+
+        toast.success('Canje creado');
+      }
+
+      setIsCanjeDialogOpen(false);
+      setEditingCanje(null);
+      setCanjeFormData({
+        id_rango: '',
+        nombre_canje: '',
+        tipo_canje: 'descuento',
+        valor_descuento: '',
+        cantidad_consultas: '1',
+        descripcion: '',
+        monto_minimo_consulta: ''
+      });
+      fetchRangosYCanjes();
+    } catch (error: any) {
+      toast.error('Error al guardar canje');
+    }
+  };
+
+  const handleEliminarCanje = async (idCanje: number) => {
+    const confirmado = window.confirm('¿Estás seguro de eliminar este canje? Esta acción lo desactivará.');
+    if (!confirmado) {
+      return;
+    }
+
+    try {
+      if (USE_LEGACY_REWARDS_SCHEMA) {
+        const { error } = await supabase
+          .from('recompensas')
+          .update({ activa: false })
+          .eq('id_recompensa', idCanje);
+
+        if (error) throw error;
+        toast.success('Canje desactivado');
+        fetchRangosYCanjes();
+        return;
+      }
+
+      const { error } = await supabase
+        .from('canjes')
+        .update({ activo: false })
+        .eq('id_canje', idCanje);
+
+      if (error) throw error;
+      toast.success('Canje desactivado');
+      fetchRangosYCanjes();
+    } catch (error: any) {
+      toast.error('Error al desactivar canje');
+    }
+  };
+
+  const abrirDialogRango = (rango?: any) => {
+    if (rango) {
+      setEditingRango(rango);
+      setRangoFormData({
+        nombre_rango: rango.nombre_rango,
+        puntos_minimo: rango.puntos_minimo.toString(),
+        puntos_maximo: rango.puntos_maximo?.toString() || '',
+        descripcion: rango.descripcion || ''
+      });
+    } else {
+      setEditingRango(null);
+      setRangoFormData({ nombre_rango: '', puntos_minimo: '', puntos_maximo: '', descripcion: '' });
+    }
+    setIsRangoDialogOpen(true);
+  };
+
+  const abrirDialogCanje = (canje?: any) => {
+    if (canje) {
+      setEditingCanje(canje);
+      setCanjeFormData({
+        id_rango: canje.id_rango?.toString() || '',
+        nombre_canje: canje.nombre_canje,
+        tipo_canje: 'descuento',
+        valor_descuento: USE_LEGACY_REWARDS_SCHEMA
+          ? (canje.puntos_requeridos?.toString() || '')
+          : (canje.valor_descuento?.toString() || ''),
+        cantidad_consultas: canje.cantidad_consultas?.toString() || '1',
+        descripcion: canje.descripcion || '',
+        monto_minimo_consulta: canje.monto_minimo_consulta?.toString() || ''
+      });
+    } else {
+      setEditingCanje(null);
+      setCanjeFormData({
+        id_rango: '',
+        nombre_canje: '',
+        tipo_canje: 'descuento',
+        valor_descuento: '',
+        cantidad_consultas: '1',
+        descripcion: '',
+        monto_minimo_consulta: ''
+      });
+    }
+    setIsCanjeDialogOpen(true);
+  };
 
   return (
     <div className="min-h-screen p-4 md:p-10 font-sans bg-[#F8FFF4] space-y-10">
       <div className="max-w-7xl mx-auto space-y-10">
-        
-        {/* Header */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 px-2">
           <div>
             <div className="inline-flex flex-col items-start">
@@ -402,7 +901,7 @@ export function Gamificacion() {
                               value={paciente.id.toString()} 
                               className="font-bold text-sm uppercase py-3"
                             >
-                              {paciente.nombre} {paciente.apellido} ({paciente.correo}) - {paciente.puntos} pts
+                              {paciente.nombre} {paciente.apellido} ({paciente.correo}) - {formatPoints(paciente.puntos)} pts
                             </SelectItem>
                           ))
                         )}
@@ -446,8 +945,6 @@ export function Gamificacion() {
                 </form>
               </DialogContent>
             </Dialog>
-
-            {/* BARRA DE BÚSQUEDA EN LA PANTALLA PRINCIPAL */}
             <div className="relative w-full sm:w-80">
               <Input
                 placeholder="Buscar paciente..."
@@ -459,14 +956,40 @@ export function Gamificacion() {
             </div>
           </div>
         </div>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <div className="flex justify-center mb-8">
+            <TabsList className="bg-white border-2 border-[#D1E8D5] rounded-2xl p-2 shadow-sm">
+              <TabsTrigger 
+                value="gamificacion"
+                className="data-[state=active]:bg-[#2E8B57] data-[state=active]:text-white px-6 py-3 font-black uppercase text-xs md:text-sm rounded-xl transition-all"
+              >
+                <Trophy size={18} className="mr-2" />
+                Gamificación
+              </TabsTrigger>
+              {ENABLE_CANJES_MODULE && (
+                <TabsTrigger 
+                  value="canjes"
+                  className="data-[state=active]:bg-[#2E8B57] data-[state=active]:text-white px-6 py-3 font-black uppercase text-xs md:text-sm rounded-xl transition-all"
+                >
+                  <Gift size={18} className="mr-2" />
+                  Canjes
+                </TabsTrigger>
+              )}
+            </TabsList>
+          </div>
 
-        {/* Niveles - AJUSTADOS A UMBRALES Y NOMBRES */}
+          {!ENABLE_CANJES_MODULE && (
+            <div className="text-center text-xs md:text-sm text-gray-500 font-semibold mb-6">
+              Módulo de canjes deshabilitado temporalmente para mantener compatibilidad con tu esquema actual.
+            </div>
+          )}
+          <TabsContent value="gamificacion" className="space-y-8">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
             { n: 'Bronce', pts: '100-999', color: 'text-orange-600', bg: 'bg-orange-50', image: premioBronceImg, level: 'Principiante' },
-            { n: 'Plata', pts: '1000-4999', color: 'text-slate-500', bg: 'bg-slate-50', image: premioPlataImg, level: 'Intermedio' },
-            { n: 'Oro', pts: '5000-9999', color: 'text-yellow-600', bg: 'bg-yellow-50', image: premioOroImg, level: 'Avanzado' },
-            { n: 'Diamante', pts: '10000+', color: 'text-blue-600', bg: 'bg-blue-50', image: premioDiamanteImg, level: 'Leyenda' },
+            { n: 'Plata', pts: '1,000-4,999', color: 'text-slate-500', bg: 'bg-slate-50', image: premioPlataImg, level: 'Intermedio' },
+            { n: 'Oro', pts: '5,000-9,999', color: 'text-yellow-600', bg: 'bg-yellow-50', image: premioOroImg, level: 'Avanzado' },
+            { n: 'Diamante', pts: '10,000+', color: 'text-blue-600', bg: 'bg-blue-50', image: premioDiamanteImg, level: 'Leyenda' },
           ].map((lvl) => (
             <Card key={lvl.n} className="rounded-[2rem] border-2 border-[#D1E8D5] overflow-hidden shadow-none">
               <CardContent className={`p-6 flex flex-col items-center justify-center text-center space-y-2 ${lvl.bg}`}>
@@ -480,7 +1003,6 @@ export function Gamificacion() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Ranking */}
           <Card className="rounded-[2.5rem] border-2 border-[#D1E8D5] overflow-hidden bg-white shadow-sm">
             <CardHeader className="bg-[#F8FFF9] border-b border-[#D1E8D5] p-8">
               <CardTitle className="text-base md:text-lg font-[900] text-[#1A3026] uppercase tracking-[2px] flex items-center gap-2">
@@ -534,7 +1056,7 @@ export function Gamificacion() {
                         </div>
                         <div className="text-right">
                           <p className="text-xl md:text-2xl font-black text-[#1A3026] leading-none">
-                            {paciente.puntos}
+                            {formatPoints(paciente.puntos)}
                           </p>
                           <p className="text-[10px] md:text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">
                             Puntos Totales
@@ -554,8 +1076,6 @@ export function Gamificacion() {
               )}
             </CardContent>
           </Card>
-
-          {/* Cumplimiento de Metas */}
           <Card className="rounded-[2.5rem] border-2 border-[#D1E8D5] overflow-hidden bg-white shadow-sm">
             <CardHeader className="bg-[#F8FFF9] border-b border-[#D1E8D5] p-8">
               <CardTitle className="text-base md:text-lg font-[900] text-[#1A3026] uppercase tracking-[2px] flex items-center gap-2">
@@ -588,7 +1108,7 @@ export function Gamificacion() {
                           </Avatar>
                           <div>
                             <p className="font-black text-[#1A3026] uppercase text-sm md:text-base">{paciente.nombre}</p>
-                            <p className="text-xs md:text-sm font-bold text-gray-400 tracking-tight">META: 10000 PTS</p>
+                            <p className="text-xs md:text-sm font-bold text-gray-400 tracking-tight">META: 10,000 PTS</p>
                           </div>
                         </div>
                         <div className={`px-4 py-2 rounded-xl border-2 font-black text-xs md:text-sm uppercase shadow-sm ${
@@ -614,6 +1134,390 @@ export function Gamificacion() {
             </CardContent>
           </Card>
         </div>
+          </TabsContent>
+
+            {/* ═══════════════════════════════════════════════════════
+              TAB: GESTIÓN DE CANJES
+              ═══════════════════════════════════════════════════════ */}
+            {ENABLE_CANJES_MODULE && <TabsContent value="canjes" className="space-y-8">
+            {loadingCanjes ? (
+              <div className="text-center py-12">
+                <p className="text-gray-500">Cargando canjes...</p>
+              </div>
+            ) : (
+              <>
+                {!USE_LEGACY_REWARDS_SCHEMA && <Card className="rounded-[2.5rem] border-2 border-[#D1E8D5] overflow-hidden bg-white shadow-sm">
+                  <CardHeader className="bg-[#F8FFF9] border-b border-[#D1E8D5] p-8 flex flex-row items-center justify-between">
+                    <CardTitle className="text-base md:text-lg font-[900] text-[#1A3026] uppercase tracking-[2px] flex items-center gap-2">
+                      <Target className="text-[#2E8B57]" size={20} /> Rangos de Puntos
+                    </CardTitle>
+                    <Dialog open={isRangoDialogOpen} onOpenChange={setIsRangoDialogOpen}>
+                      <DialogTrigger asChild>
+                        <Button 
+                          onClick={() => abrirDialogRango()}
+                          className="bg-[#2E8B57] hover:bg-[#1A3026] text-white font-black py-2 px-4 rounded-lg text-xs md:text-sm flex items-center gap-2"
+                        >
+                          <Plus size={16} />
+                          Nuevo Rango
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] max-w-lg max-h-[90vh] overflow-y-auto rounded-[2rem] border-2 border-[#D1E8D5] p-4 sm:p-6 md:p-8">
+                        <DialogHeader>
+                          <DialogTitle className="text-2xl font-[900] text-[#2E8B57] uppercase">
+                            {editingRango ? 'Editar Rango' : 'Crear Nuevo Rango'}
+                          </DialogTitle>
+                          <DialogDescription>
+                            Configura un rango de puntos para tus pacientes
+                          </DialogDescription>
+                        </DialogHeader>
+                        <form onSubmit={handleGuardarRango} className="space-y-6 mt-6">
+                          <div className="space-y-2">
+                            <Label className="text-xs md:text-sm font-black uppercase text-gray-400 tracking-wider">
+                              Nombre del Rango
+                            </Label>
+                            <Input
+                              placeholder="e.g., Bronce, Plata, Oro"
+                              value={rangoFormData.nombre_rango}
+                              onChange={(e) => setRangoFormData({ ...rangoFormData, nombre_rango: e.target.value })}
+                              className="border-2 border-[#D1E8D5] rounded-xl h-12 font-bold"
+                              required
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label className="text-xs md:text-sm font-black uppercase text-gray-400 tracking-wider">
+                                Puntos Mínimo
+                              </Label>
+                              <Input
+                                type="number"
+                                min="0"
+                                placeholder="100"
+                                value={rangoFormData.puntos_minimo}
+                                onChange={(e) => setRangoFormData({ ...rangoFormData, puntos_minimo: e.target.value })}
+                                className="border-2 border-[#D1E8D5] rounded-xl h-12 font-bold"
+                                required
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-xs md:text-sm font-black uppercase text-gray-400 tracking-wider">
+                                Puntos Máximo (opcional)
+                              </Label>
+                              <Input
+                                type="number"
+                                placeholder="999"
+                                value={rangoFormData.puntos_maximo}
+                                onChange={(e) => setRangoFormData({ ...rangoFormData, puntos_maximo: e.target.value })}
+                                className="border-2 border-[#D1E8D5] rounded-xl h-12 font-bold"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-xs md:text-sm font-black uppercase text-gray-400 tracking-wider">
+                              Descripción (opcional)
+                            </Label>
+                            <Input
+                              placeholder="Descripción del rango..."
+                              value={rangoFormData.descripcion}
+                              onChange={(e) => setRangoFormData({ ...rangoFormData, descripcion: e.target.value })}
+                              className="border-2 border-[#D1E8D5] rounded-xl h-12 font-bold"
+                            />
+                          </div>
+                          <div className="flex gap-4 pt-4">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => setIsRangoDialogOpen(false)}
+                              className="flex-1 border-2 border-[#D1E8D5] text-gray-500 font-black uppercase rounded-xl h-12"
+                            >
+                              Cancelar
+                            </Button>
+                            <Button
+                              type="submit"
+                              className="flex-1 bg-[#2E8B57] hover:bg-[#1A3026] text-white font-black uppercase h-12 rounded-xl"
+                            >
+                              {editingRango ? 'Actualizar' : 'Crear'}
+                            </Button>
+                          </div>
+                        </form>
+                      </DialogContent>
+                    </Dialog>
+                  </CardHeader>
+                  <CardContent className="p-8">
+                    {rangos.length === 0 ? (
+                      <div className="text-center py-12 px-6 rounded-2xl border-2 border-dashed border-[#D1E8D5] bg-[#FBFFFC]">
+                        <p className="text-sm font-black uppercase tracking-wide text-[#2E8B57] mb-2">Sin rangos configurados</p>
+                        <p className="text-sm text-gray-500">Crea el primer rango para organizar los canjes por nivel.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {rangos.map((rango) => (
+                          <div key={rango.id_rango} className="group rounded-2xl border-2 border-[#D1E8D5] bg-white p-5 transition-all hover:border-[#A7D9BA] hover:shadow-md">
+                            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <Target size={15} className="text-[#2E8B57]" />
+                                  <h4 className="font-black text-[#1A3026] uppercase text-sm tracking-wide">{rango.nombre_rango}</h4>
+                                </div>
+
+                                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-xl bg-[#F0FFF4] border border-[#D1E8D5]">
+                                  <span className="text-[11px] font-black uppercase tracking-wider text-[#2E8B57]">Rango</span>
+                                  <span className="text-xs font-black text-[#1A3026]">
+                                    {formatPoints(rango.puntos_minimo)} - {rango.puntos_maximo ? formatPoints(rango.puntos_maximo) : 'sin límite'} pts
+                                  </span>
+                                </div>
+
+                                {rango.descripcion && (
+                                  <p className="text-xs text-gray-600 mt-3 leading-relaxed">{rango.descripcion}</p>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2 self-start md:self-center">
+                                <Button
+                                  onClick={() => abrirDialogRango(rango)}
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-9 px-3 border-2 border-[#C7E8D2] text-[#2E8B57] bg-white hover:bg-[#F2FFF6] font-black rounded-xl"
+                                >
+                                  <Edit size={14} className="mr-1" /> Editar
+                                </Button>
+                                <Button
+                                  onClick={() => handleEliminarRango(rango.id_rango)}
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-9 px-3 border-2 border-[#F2D4D4] text-[#B54747] bg-white hover:bg-[#FFF5F5] font-black rounded-xl"
+                                >
+                                  <Trash2 size={14} className="mr-1" /> Eliminar
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>}
+                <Card className="rounded-[2.5rem] border-2 border-[#D1E8D5] overflow-hidden bg-white shadow-sm">
+                  <CardHeader className="bg-[#F8FFF9] border-b border-[#D1E8D5] p-8 flex flex-row items-center justify-between">
+                    <CardTitle className="text-base md:text-lg font-[900] text-[#1A3026] uppercase tracking-[2px] flex items-center gap-2">
+                      <Gift className="text-[#2E8B57]" size={20} /> Canjes y Descuentos
+                    </CardTitle>
+                    <Dialog open={isCanjeDialogOpen} onOpenChange={setIsCanjeDialogOpen}>
+                      <DialogTrigger asChild>
+                        <Button 
+                          onClick={() => abrirDialogCanje()}
+                          disabled={!USE_LEGACY_REWARDS_SCHEMA && rangos.length === 0}
+                          className="bg-[#2E8B57] hover:bg-[#1A3026] text-white font-black py-2 px-4 rounded-lg text-xs md:text-sm flex items-center gap-2 disabled:opacity-50"
+                        >
+                          <Plus size={16} />
+                          Nuevo Canje
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] max-w-lg max-h-[90vh] overflow-y-auto rounded-[2rem] border-2 border-[#D1E8D5] p-4 sm:p-6 md:p-8">
+                        <DialogHeader>
+                          <DialogTitle className="text-2xl font-[900] text-[#2E8B57] uppercase">
+                            {editingCanje ? 'Editar Canje' : 'Crear Nuevo Canje'}
+                          </DialogTitle>
+                          <DialogDescription>
+                            {USE_LEGACY_REWARDS_SCHEMA
+                              ? 'Define descuentos con puntos requeridos para canjear'
+                              : 'Define descuentos para tus rangos'}
+                          </DialogDescription>
+                        </DialogHeader>
+                        <form onSubmit={handleGuardarCanje} className="space-y-6 mt-6">
+                          {!USE_LEGACY_REWARDS_SCHEMA && <div className="space-y-2">
+                            <Label className="text-xs md:text-sm font-black uppercase text-gray-400 tracking-wider">
+                              Rango
+                            </Label>
+                            <Select value={canjeFormData.id_rango} onValueChange={(val) => setCanjeFormData({ ...canjeFormData, id_rango: val })}>
+                              <SelectTrigger className="border-2 border-[#D1E8D5] rounded-xl h-12">
+                                <SelectValue placeholder="Selecciona un rango" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {rangos.map((r) => (
+                                  <SelectItem key={r.id_rango} value={r.id_rango.toString()}>
+                                    {r.nombre_rango} ({r.puntos_minimo}-{r.puntos_maximo || '∞'})
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>}
+                          <div className="space-y-2">
+                            <Label className="text-xs md:text-sm font-black uppercase text-gray-400 tracking-wider">
+                              Nombre del Canje
+                            </Label>
+                            <Input
+                              placeholder="e.g., 15% de descuento"
+                              value={canjeFormData.nombre_canje}
+                              onChange={(e) => setCanjeFormData({ ...canjeFormData, nombre_canje: e.target.value })}
+                              className="border-2 border-[#D1E8D5] rounded-xl h-12 font-bold"
+                              required
+                            />
+                          </div>
+                          {!USE_LEGACY_REWARDS_SCHEMA && (
+                            <div className="space-y-2">
+                              <Label className="text-xs md:text-sm font-black uppercase text-gray-400 tracking-wider">
+                                Tipo de Canje
+                              </Label>
+                              <div className="h-12 px-4 flex items-center border-2 border-[#D1E8D5] rounded-xl bg-[#F8FFF9] text-[#1A3026] font-bold">
+                                <Percent size={14} className="mr-2 text-[#2E8B57]" /> Descuento
+                              </div>
+                            </div>
+                          )}
+
+                          {USE_LEGACY_REWARDS_SCHEMA && (
+                            <div className="space-y-2">
+                              <Label className="text-xs md:text-sm font-black uppercase text-gray-400 tracking-wider">
+                                Puntos Requeridos para Canjear
+                              </Label>
+                              <Input
+                                type="number"
+                                min="0"
+                                placeholder="100"
+                                value={canjeFormData.valor_descuento}
+                                onChange={(e) => setCanjeFormData({ ...canjeFormData, valor_descuento: e.target.value })}
+                                className="border-2 border-[#D1E8D5] rounded-xl h-12 font-bold"
+                                required
+                              />
+                            </div>
+                          )}
+
+                          {!USE_LEGACY_REWARDS_SCHEMA && (
+                            <div className="space-y-2">
+                              <Label className="text-xs md:text-sm font-black uppercase text-gray-400 tracking-wider">
+                                Porcentaje de Descuento (0-100%)
+                              </Label>
+                              <Input
+                                type="number"
+                                min="0"
+                                max="100"
+                                placeholder="15"
+                                value={canjeFormData.valor_descuento}
+                                onChange={(e) => setCanjeFormData({ ...canjeFormData, valor_descuento: e.target.value })}
+                                className="border-2 border-[#D1E8D5] rounded-xl h-12 font-bold"
+                                required
+                              />
+                            </div>
+                          )}
+
+                          {!USE_LEGACY_REWARDS_SCHEMA && <div className="space-y-2">
+                            <Label className="text-xs md:text-sm font-black uppercase text-gray-400 tracking-wider">
+                              Monto Mínimo de Consulta (opcional)
+                            </Label>
+                            <p className="text-xs text-gray-500">Monto mínimo para aplicar el canje (evita pérdidas, ej: $100.00)</p>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              placeholder="100.00"
+                              value={canjeFormData.monto_minimo_consulta}
+                              onChange={(e) => setCanjeFormData({ ...canjeFormData, monto_minimo_consulta: e.target.value })}
+                              className="border-2 border-[#D1E8D5] rounded-xl h-12 font-bold"
+                            />
+                          </div>}
+
+                          <div className="space-y-2">
+                            <Label className="text-xs md:text-sm font-black uppercase text-gray-400 tracking-wider">
+                              Descripción (opcional)
+                            </Label>
+                            <Input
+                              placeholder="Detalles adicionales del canje..."
+                              value={canjeFormData.descripcion}
+                              onChange={(e) => setCanjeFormData({ ...canjeFormData, descripcion: e.target.value })}
+                              className="border-2 border-[#D1E8D5] rounded-xl h-12 font-bold"
+                            />
+                          </div>
+
+                          <div className="flex gap-4 pt-4">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => setIsCanjeDialogOpen(false)}
+                              className="flex-1 border-2 border-[#D1E8D5] text-gray-500 font-black uppercase rounded-xl h-12"
+                            >
+                              Cancelar
+                            </Button>
+                            <Button
+                              type="submit"
+                              className="flex-1 bg-[#2E8B57] hover:bg-[#1A3026] text-white font-black uppercase h-12 rounded-xl"
+                            >
+                              {editingCanje ? 'Actualizar' : 'Crear'}
+                            </Button>
+                          </div>
+                        </form>
+                      </DialogContent>
+                    </Dialog>
+                  </CardHeader>
+                  <CardContent className="p-8">
+                    {canjes.length === 0 ? (
+                      <div className="text-center py-12 px-6 rounded-2xl border-2 border-dashed border-[#D1E8D5] bg-[#FBFFFC]">
+                        <p className="text-sm font-black uppercase tracking-wide text-[#2E8B57] mb-2">Sin canjes disponibles</p>
+                        <p className="text-sm text-gray-500">Crea descuentos para que tus pacientes intercambien sus puntos.</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                        {canjes.map((canje: any) => (
+                          <div key={canje.id_canje} className="group rounded-2xl border-2 border-[#D1E8D5] bg-white p-5 transition-all hover:border-[#A7D9BA] hover:shadow-md">
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <Percent size={16} className="text-blue-600" />
+                                  <h4 className="font-black text-[#1A3026] uppercase text-sm tracking-wide truncate">{canje.nombre_canje}</h4>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2 mb-3">
+                                  {USE_LEGACY_REWARDS_SCHEMA ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#F0FFF4] border border-[#D1E8D5] text-[11px] font-black uppercase text-[#2E8B57]">
+                                      Requiere {formatPoints(canje.puntos_requeridos || 0)} pts
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#F5F8FF] border border-[#DCE7FF] text-[11px] font-black uppercase text-[#3E5DA8]">
+                                      Rango {canje.rangos_puntos?.nombre_rango || 'N/A'}
+                                    </span>
+                                  )}
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#FFF8E8] border border-[#F2E3B3] text-[11px] font-black uppercase text-[#A67510]">
+                                    Descuento
+                                  </span>
+                                </div>
+
+                                {canje.descripcion && (
+                                  <p className="text-xs text-gray-600 leading-relaxed">{canje.descripcion}</p>
+                                )}
+                                {canje.monto_minimo_consulta && (
+                                  <p className="text-xs text-orange-600 mt-2 font-bold">
+                                    Monto mínimo: ${canje.monto_minimo_consulta.toFixed(2)}
+                                  </p>
+                                )}
+                              </div>
+
+                              <div className="flex flex-col gap-2">
+                                <Button
+                                  onClick={() => abrirDialogCanje(canje)}
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-9 px-3 border-2 border-[#C7E8D2] text-[#2E8B57] bg-white hover:bg-[#F2FFF6] font-black rounded-xl"
+                                >
+                                  <Edit size={14} className="mr-1" /> Editar
+                                </Button>
+                                <Button
+                                  onClick={() => handleEliminarCanje(canje.id_canje)}
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-9 px-3 border-2 border-[#F2D4D4] text-[#B54747] bg-white hover:bg-[#FFF5F5] font-black rounded-xl"
+                                >
+                                  <Trash2 size={14} className="mr-1" /> Eliminar
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </>
+            )}
+          </TabsContent>}
+        </Tabs>
       </div>
     </div>
   );

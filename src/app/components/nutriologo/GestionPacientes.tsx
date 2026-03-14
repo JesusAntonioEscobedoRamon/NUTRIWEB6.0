@@ -13,8 +13,9 @@ import { supabase } from '@/app/context/supabaseClient';
 import { Search, Award, TrendingUp, User, Activity, Users, Save } from 'lucide-react';
 import { toast } from 'sonner';
 import {ImageWithFallback} from '@/app/components/figma/ImageWithFallback';
+import { dbgGroup, dbgGroupEnd, dbgLog, dbgOk, dbgWarn, dbgError } from '@/utils/debug';
 
-// Componente de carga animado (sin cambios)
+const formatPoints = (value: number) => Number(value || 0).toLocaleString('es-MX');
 function AnimatedLoadingScreen() {
   const iconRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
@@ -117,8 +118,6 @@ export function GestionPacientes() {
   const [loading, setLoading] = useState(true);
   const [selectedPaciente, setSelectedPaciente] = useState<any>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-
-  // Estados para edición en el diálogo
   const [editPeso, setEditPeso] = useState('');
   const [editAltura, setEditAltura] = useState('');
   const [editObjetivo, setEditObjetivo] = useState('');
@@ -133,19 +132,37 @@ export function GestionPacientes() {
     }
 
     const fetchPacientes = async () => {
+      dbgGroup('screen', `GestionPacientes — nutriologoId=${user.nutriologoId}`);
       setLoading(true);
+
+      // Safety: si la DB no responde en 15s, desbloqueamos la UI
+      const timeoutId = setTimeout(() => {
+        dbgError('GestionPacientes: timeout 15s — desbloqueo forzado');
+        console.error('[NutriU] GestionPacientes: timeout esperando datos de Supabase. Verifica conexión y API key.');
+        setLoading(false);
+      }, 15000);
+
       try {
+        dbgLog('Cargando relaciones paciente_nutriologo...');
         const { data: relaciones, error: errRel } = await supabase
           .from('paciente_nutriologo')
           .select('id_paciente')
           .eq('id_nutriologo', Number(user.nutriologoId))
           .eq('activo', true);
 
-        if (errRel) throw errRel;
+        if (errRel) {
+          dbgError('Error paciente_nutriologo', errRel);
+          throw errRel;
+        }
+
+        dbgLog(`Relaciones encontradas: ${relaciones?.length ?? 0}`);
 
         if (!relaciones?.length) {
+          dbgWarn('Sin pacientes asignados a este nutriólogo');
           setPacientes([]);
+          clearTimeout(timeoutId);
           setLoading(false);
+          dbgGroupEnd();
           return;
         }
 
@@ -168,14 +185,11 @@ export function GestionPacientes() {
           .in('id_paciente', pacienteIds);
 
         if (errPac) throw errPac;
-
-        // Generar URLs públicas CORRECTAS (sin agregar carpeta extra)
         const pacientesConFotos = await Promise.all(
           (pacientesData || []).map(async (p) => {
             let fotoUrl = 'usu.webp'; // fallback
 
             if (p.foto_perfil && p.foto_perfil.trim() !== '') {
-              // El path ya incluye perfiles_mobile/ (según tu móvil lo guarda así)
               const pathCompleto = p.foto_perfil; // ej: perfiles_mobile/1771301876297.jpeg
               const { data } = supabase.storage
                 .from('perfiles')
@@ -183,9 +197,7 @@ export function GestionPacientes() {
 
               if (data?.publicUrl) {
                 fotoUrl = data.publicUrl;
-                console.log('URL pública generada:', fotoUrl); // Para depurar
               } else {
-                console.warn(`Fallo al generar URL para ${pathCompleto}`);
               }
             }
 
@@ -211,12 +223,16 @@ export function GestionPacientes() {
           })
         );
 
+        dbgOk(`Pacientes cargados: ${pacientesConFotos.length}`);
         setPacientes(pacientesConFotos);
       } catch (err: any) {
-        console.error('Error cargando pacientes:', err);
+        dbgError('fetchPacientes error', err);
+        console.error('[NutriU] GestionPacientes error:', err?.message ?? err);
         toast.error('No se pudieron cargar los pacientes');
       } finally {
+        clearTimeout(timeoutId);
         setLoading(false);
+        dbgGroupEnd();
       }
     };
 
@@ -241,8 +257,6 @@ export function GestionPacientes() {
     if (imc < 30) return { label: 'Sobrepeso', color: 'bg-yellow-100 text-yellow-700' };
     return { label: 'Obesidad', color: 'bg-red-100 text-red-700' };
   };
-
-  // Abrir diálogo y cargar valores actuales
   const handleVerDetalles = (paciente: any) => {
     setSelectedPaciente(paciente);
     setEditPeso(paciente.peso.toString());
@@ -251,8 +265,6 @@ export function GestionPacientes() {
     setHasChanges(false);
     setDialogOpen(true);
   };
-
-  // Detectar cambios en los campos editables
   useEffect(() => {
     if (selectedPaciente) {
       const pesoChanged = editPeso !== selectedPaciente.peso.toString();
@@ -262,8 +274,6 @@ export function GestionPacientes() {
       setHasChanges(pesoChanged || alturaChanged || objetivoChanged);
     }
   }, [editPeso, editAltura, editObjetivo, selectedPaciente]);
-
-  // Guardar cambios con validación de límites
   const handleGuardarCambios = async () => {
     if (!selectedPaciente) return;
 
@@ -300,8 +310,6 @@ export function GestionPacientes() {
             : p
         )
       );
-
-      // Actualizar el paciente seleccionado con los nuevos valores
       setSelectedPaciente(prev => ({
         ...prev,
         peso: pesoNum,
@@ -312,14 +320,11 @@ export function GestionPacientes() {
       setHasChanges(false);
       toast.success('Datos actualizados correctamente');
     } catch (err: any) {
-      console.error('Error al actualizar paciente:', err);
       toast.error('No se pudo actualizar: ' + (err.message || 'Intenta de nuevo'));
     } finally {
       setEditLoading(false);
     }
   };
-
-  // Manejar cierre del diálogo
   const handleCancel = () => {
     if (selectedPaciente) {
       setEditPeso(selectedPaciente.peso.toString());
@@ -328,8 +333,6 @@ export function GestionPacientes() {
       setHasChanges(false);
     }
   };
-
-  // Cerrar diálogo completamente
   const handleCloseDialog = () => {
     setDialogOpen(false);
     setSelectedPaciente(null);
@@ -343,13 +346,11 @@ export function GestionPacientes() {
   return (
     <div className="min-h-screen p-6 md:p-10 font-sans bg-[#F8FFF9] space-y-10">
       <div className="max-w-7xl mx-auto space-y-10">
-        
-        {/* Encabezado estilo Perfil */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 px-2">
           <div>
             <div className="inline-flex flex-col items-start">
               <h1 className="text-4xl font-[900] text-[#2E8B57] tracking-[4px] uppercase">
-                Mis Pacientes
+                Gestión de Pacientes
               </h1>
               <div className="w-16 h-1.5 bg-[#3CB371] rounded-full mt-2" />
             </div>
@@ -358,8 +359,6 @@ export function GestionPacientes() {
             </p>
           </div>
         </div>
-
-        {/* Buscador Estilizado */}
         <div className="relative max-w-2xl">
           <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-[#2E8B57]" />
           <Input
@@ -369,8 +368,6 @@ export function GestionPacientes() {
             className="w-full pl-14 py-5 bg-white border-2 border-[#D1E8D5] rounded-2xl focus:border-[#2E8B57] outline-none text-sm font-black tracking-widest uppercase placeholder:text-gray-400 shadow-sm transition-all"
           />
         </div>
-
-        {/* Tabla de pacientes */}
         <div className="bg-white rounded-[2.5rem] border-2 border-[#D1E8D5] shadow-sm overflow-hidden">
           <div className="p-8 border-b border-[#F0FFF4] flex items-center justify-between bg-[#F8FFF9]/50">
             <h3 className="text-lg font-[900] text-[#1A3026] uppercase tracking-[2px]">
@@ -397,7 +394,11 @@ export function GestionPacientes() {
                   const imc = Number(calcularIMC(paciente.peso, paciente.altura));
                   const categoria = categoriaIMC(imc);
                   return (
-                    <TableRow key={paciente.id} className="border-b border-[#F0FFF4] hover:bg-[#F8FFF9] transition-colors group">
+                    <TableRow 
+                      key={paciente.id} 
+                      onClick={() => handleVerDetalles(paciente)}
+                      className="border-b border-[#F0FFF4] hover:bg-[#F8FFF9] transition-colors group cursor-pointer"
+                    >
                       <TableCell className="py-5">
                         <div className="flex items-center gap-3">
                           <div className="h-10 w-10 bg-[#F0FFF4] rounded-full overflow-hidden border-2 border-[#D1E8D5] flex-shrink-0">
@@ -431,14 +432,17 @@ export function GestionPacientes() {
                           <div className="bg-yellow-50 p-1.5 rounded-lg border border-yellow-100">
                             <Award className="h-3.5 w-3.5 text-yellow-500" />
                           </div>
-                          <span className="font-black text-[#1A3026] text-base">{paciente.puntos}</span>
+                          <span className="font-black text-[#1A3026] text-base">{formatPoints(paciente.puntos)}</span>
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
                         <Button 
                           variant="outline" 
                           size="sm"
-                          onClick={() => handleVerDetalles(paciente)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleVerDetalles(paciente);
+                          }}
                           className="border-2 border-[#D1E8D5] text-[#2E8B57] font-black text-xs uppercase tracking-widest rounded-xl hover:bg-[#F0FFF4] hover:border-[#2E8B57] transition-all px-4"
                         >
                           Ver Detalles
@@ -459,11 +463,9 @@ export function GestionPacientes() {
           </div>
         </div>
       </div>
-
-      {/* Diálogo de detalles del paciente */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] max-w-3xl max-h-[92vh] rounded-[2rem] sm:rounded-[2.5rem] border-2 border-[#D1E8D5] bg-white p-0 overflow-hidden font-sans">
-          <div className="custom-dialog-scroll overflow-y-auto max-h-[92vh] p-4 sm:p-6 md:p-8">
+          <div className="custom-dialog-scroll overflow-y-auto max-h-[92vh] p-4 sm:p-6 md:p-8" onClick={(e) => e.stopPropagation()}>
             <DialogHeader>
               <DialogTitle className="text-3xl font-[900] text-[#2E8B57] uppercase tracking-[2px] mb-4 text-left flex items-center gap-4">
                 <div className="h-16 w-16 bg-[#F0FFF4] rounded-full overflow-hidden border-2 border-[#D1E8D5] flex-shrink-0">
@@ -479,7 +481,6 @@ export function GestionPacientes() {
             </DialogHeader>
             {selectedPaciente && (
               <div className="space-y-8 mt-4">
-                {/* Contenedores fijos */}
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   <div className="bg-[#F8FFF9] p-3 rounded-xl border border-[#D1E8D5] min-h-[80px] flex flex-col">
                     <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">EMAIL</p>
@@ -502,7 +503,7 @@ export function GestionPacientes() {
                     <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">PUNTOS</p>
                     <div className="flex items-center gap-2">
                       <Award size={14} className="text-yellow-500 flex-shrink-0" />
-                      <p className="text-sm font-black text-[#1A3026]">{selectedPaciente.puntos}</p>
+                      <p className="text-sm font-black text-[#1A3026]">{formatPoints(selectedPaciente.puntos)}</p>
                     </div>
                   </div>
 
@@ -511,8 +512,6 @@ export function GestionPacientes() {
                     <p className="text-sm font-black text-[#1A3026]">{selectedPaciente.fechaRegistro}</p>
                   </div>
                 </div>
-
-                {/* Campos editables como lista con Accordion */}
                 <Accordion type="single" collapsible className="w-full">
                   <AccordionItem value="altura">
                     <AccordionTrigger>ALTURA (CM)</AccordionTrigger>
@@ -556,8 +555,6 @@ export function GestionPacientes() {
                     </AccordionContent>
                   </AccordionItem>
                 </Accordion>
-
-                {/* Botones de acción - solo visibles si hay cambios */}
                 {hasChanges && (
                   <DialogFooter className="pt-6 border-t-2 border-dashed border-[#F0FFF4]">
                     <Button
@@ -610,9 +607,7 @@ export function GestionPacientes() {
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* Estilo global del scroll */}
-      <style jsx global>{`
+      <style>{`
         .custom-dialog-scroll::-webkit-scrollbar {
           width: 6px;
         }

@@ -1,4 +1,3 @@
-// src/app/components/ResetPassword.tsx
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/app/context/supabaseClient';
@@ -19,20 +18,15 @@ export function ResetPassword() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-
-  // Validar que sea un enlace de recuperación válido
   useEffect(() => {
     const type = searchParams.get('type');
     if (type !== 'recovery') {
       setError('Este enlace no es válido para recuperación de contraseña. Solicita uno nuevo desde la pantalla de login.');
       return;
     }
-
-    // Opcional: verificar token en hash (Supabase lo envía ahí)
     const hash = window.location.hash.substring(1);
     const params = new URLSearchParams(hash);
     if (!params.has('access_token') && !params.has('type')) {
-      console.warn('No se detectó token de recuperación en la URL');
       setError('El enlace parece incompleto o ha expirado.');
     }
   }, [searchParams]);
@@ -54,7 +48,6 @@ export function ResetPassword() {
     setLoading(true);
 
     try {
-      // Cambio de contraseña directo con Supabase
       const { data, error } = await supabase.auth.updateUser({
         password: newPassword,
       });
@@ -66,14 +59,11 @@ export function ResetPassword() {
       if (data.user) {
         setSuccess(true);
         toast.success('¡Contraseña cambiada exitosamente!');
-        
-        // Esperamos 3 segundos para que vea el éxito y luego redirigimos
         setTimeout(() => {
           navigate('/login');
         }, 3000);
       }
     } catch (err: any) {
-      console.error('Error al cambiar contraseña:', err);
       const msg = err.message?.toLowerCase() || '';
       
       if (msg.includes('expired') || msg.includes('invalid')) {
@@ -111,7 +101,6 @@ export function ResetPassword() {
             )}
 
             <form onSubmit={handleReset} className="space-y-6">
-              {/* Nueva contraseña */}
               <div className="space-y-2">
                 <Label className="text-xs font-black uppercase text-gray-500 tracking-wider">
                   Nueva Contraseña
@@ -135,8 +124,6 @@ export function ResetPassword() {
                   </button>
                 </div>
               </div>
-
-              {/* Confirmar */}
               <div className="space-y-2">
                 <Label className="text-xs font-black uppercase text-gray-500 tracking-wider">
                   Confirmar Contraseña
@@ -187,7 +174,6 @@ export function ResetPassword() {
             </div>
           </>
         ) : (
-          // Pantalla de éxito (se queda aquí 3 segundos antes de redirigir)
           <div className="text-center py-12">
             <CheckCircle2 className="mx-auto h-20 w-20 text-green-500 mb-6 animate-bounce" />
             <h1 className="text-3xl font-black text-[#2E8B57] mb-4">

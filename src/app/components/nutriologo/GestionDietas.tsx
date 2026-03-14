@@ -33,6 +33,7 @@ import {
 import { toast } from 'sonner';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { dbgGroup, dbgGroupEnd, dbgLog, dbgOk, dbgError } from '@/utils/debug';
 
 type MealKey = 'desayuno' | 'colacion1' | 'almuerzo' | 'colacion2' | 'cena' | 'snack';
 
@@ -57,8 +58,6 @@ type MealData = {
 type DietaData = Record<MealKey, MealData>;
 type WeeklyDietaData = Record<number, DietaData>;
 type WeeklyMealIngredientSelection = Record<number, Record<MealKey, string>>;
-
-// Lista de unidades que el nutriólogo puede elegir
 const UNIDADES_PORCION = [
   'unidad', 'pieza', 'rebanada', 'cucharada', 'cucharadita', 
   'taza', 'vaso', 'puñado', 'porción', 'fracción', 
@@ -137,8 +136,6 @@ const createWeeklyMealIngredientSelection = (): WeeklyMealIngredientSelection =>
   }
   return weeklySelection;
 };
-
-// ANIMATED LOADING SCREEN
 function AnimatedLoadingScreen() {
   const iconRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
@@ -204,8 +201,6 @@ function AnimatedLoadingScreen() {
     </div>
   );
 }
-
-// COMPONENTE PRINCIPAL
 export function GestionDietas() {
   const { user } = useAuth();
 
@@ -228,8 +223,6 @@ export function GestionDietas() {
 
   const [dietaByDay, setDietaByDay] = useState<WeeklyDietaData>(createEmptyWeeklyDietaData());
   const [selectedIngredientByMeal, setSelectedIngredientByMeal] = useState<WeeklyMealIngredientSelection>(createWeeklyMealIngredientSelection());
-
-  // Estados temporales para cantidad y unidad por día y comida
   const [tempCantidad, setTempCantidad] = useState<Record<number, Record<MealKey, string>>>({});
   const [tempUnidad, setTempUnidad] = useState<Record<number, Record<MealKey, string>>>({});
 
@@ -241,7 +234,29 @@ export function GestionDietas() {
   const diasSemana = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
   const diasAbreviados = ['', 'LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM'];
 
-  // Inicializar cantidad y unidad al abrir modal
+  const sanitizeCantidadInput = (rawValue: string): string => {
+    let normalized = rawValue.replace(',', '.').replace(/[^0-9.]/g, '');
+
+    if (!normalized) return '';
+
+    const firstDotIndex = normalized.indexOf('.');
+    if (firstDotIndex !== -1) {
+      normalized =
+        normalized.slice(0, firstDotIndex + 1) +
+        normalized.slice(firstDotIndex + 1).replace(/\./g, '');
+    }
+
+    if (normalized.startsWith('.')) {
+      normalized = `0${normalized}`;
+    }
+
+    if (/^0\d+/.test(normalized)) {
+      normalized = normalized.replace(/^0+/, '');
+      if (!normalized) normalized = '0';
+    }
+
+    return normalized;
+  };
   useEffect(() => {
     if (isDialogOpen) {
       const initCant = {};
@@ -250,7 +265,7 @@ export function GestionDietas() {
         initCant[dia] = {};
         initUnid[dia] = {};
         mealModules.forEach(m => {
-          initCant[dia][m.key] = '1';     // default cantidad 1
+          initCant[dia][m.key] = '0';     // valor visual inicial
           initUnid[dia][m.key] = 'unidad'; // default unidad genérica
         });
       }
@@ -266,7 +281,14 @@ export function GestionDietas() {
       return;
     }
 
+    dbgGroup('screen', `GestionDietas — nutriologoId=${user.nutriologoId}`);
     setLoading(true);
+
+    const timeoutId = setTimeout(() => {
+      dbgError('GestionDietas: timeout 15s — desbloqueo forzado');
+      console.error('[NutriU] GestionDietas: timeout esperando datos de Supabase.');
+      setLoading(false);
+    }, 15000);
 
     try {
       const { data: nutriData, error: nutriError } = await supabase
@@ -275,7 +297,13 @@ export function GestionDietas() {
         .eq('id_nutriologo', user.nutriologoId)
         .single();
 
-      if (nutriError) throw nutriError;
+      if (nutriError) {
+        dbgError('Error nutriologos', nutriError);
+        clearTimeout(timeoutId);
+        dbgGroupEnd();
+        throw nutriError;
+      }
+      dbgLog('nutriData', nutriData);
       setNutriologoEmail(nutriData?.correo || 'nutriologo@nutriu.com');
 
       const { data: relData, error: relError } = await supabase
@@ -341,12 +369,16 @@ export function GestionDietas() {
       }));
 
       setDietas(enriched);
+      dbgOk(`GestionDietas cargada: ${enriched.length} dietas`);
 
     } catch (err: any) {
-      console.error('Error cargando datos:', err);
+      dbgError('GestionDietas fetchData error', err);
+      console.error('[NutriU] GestionDietas error:', err?.message ?? err);
       toast.error('Error al cargar datos: ' + (err.message || 'Intenta de nuevo'));
     } finally {
+      clearTimeout(timeoutId);
       setLoading(false);
+      dbgGroupEnd();
     }
   };
 
@@ -431,7 +463,6 @@ export function GestionDietas() {
           return false;
         }
       } catch (err: any) {
-        console.error('Error validando dieta existente:', err);
         toast.error('No se pudo validar la dieta del paciente');
         return false;
       }
@@ -497,14 +528,15 @@ export function GestionDietas() {
 
     const alimento = alimentos.find(a => a.id_alimento.toString() === alimentoId);
     if (!alimento) return;
-
-    // Obtener cantidad y unidad temporal
-    const cantidadStr = tempCantidad[dia]?.[meal] || '1';
+    const cantidadStr = tempCantidad[dia]?.[meal] || '0';
     const unidad = tempUnidad[dia]?.[meal] || 'unidad';
-    const cantidadNum = parseFloat(cantidadStr) || 1;
+    const cantidadNum = parseFloat(cantidadStr);
 
-    // Construir porción completa
-    const porcionCompleta = `${cantidadNum} ${unidad}${cantidadNum !== 1 && !unidad.endsWith('s') ? 's' : ''}`.trim();
+    if (!Number.isFinite(cantidadNum) || cantidadNum <= 0) {
+      toast.warning('Ingresa una cantidad mayor a 0');
+      return;
+    }
+    const porcionCompleta = `${cantidadStr} ${unidad}${cantidadNum !== 1 && !unidad.endsWith('s') ? 's' : ''}`.trim();
 
     setDietaByDay(prev => {
       const currentIngredientes = prev[dia][meal].ingredientes || [];
@@ -541,15 +573,13 @@ export function GestionDietas() {
         }
       };
     });
-
-    // Limpiar
     setSelectedIngredientByMeal(prev => ({
       ...prev,
       [dia]: { ...prev[dia], [meal]: '' }
     }));
     setTempCantidad(prev => ({
       ...prev,
-      [dia]: { ...prev[dia], [meal]: '1' }
+      [dia]: { ...prev[dia], [meal]: '0' }
     }));
     setTempUnidad(prev => ({
       ...prev,
@@ -667,7 +697,6 @@ export function GestionDietas() {
       toast.success('Plan nutricional eliminado correctamente');
       await fetchData();
     } catch (err: any) {
-      console.error('Error eliminando dieta:', err);
       toast.error('Error al eliminar el plan: ' + (err.message || 'Intenta de nuevo'));
     } finally {
       setDeleteDialogOpen(false);
@@ -705,21 +734,45 @@ export function GestionDietas() {
           setLoading(false);
           return;
         }
-
-        const { data: nueva, error: insertError } = await supabase
+        const { data: dietaExistente, error: buscarError } = await supabase
           .from('dietas')
-          .insert({
-            id_nutriologo: user?.nutriologoId,
-            id_paciente: parseInt(selectedPaciente),
-            nombre_dieta: `Plan semanal - ${new Date().toLocaleDateString('es-MX')}`,
-            fecha_inicio: new Date().toISOString().split('T')[0],
-            activa: true,
-          })
           .select('id_dieta')
-          .single();
+          .eq('id_nutriologo', user?.nutriologoId)
+          .eq('id_paciente', parseInt(selectedPaciente))
+          .order('fecha_inicio', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-        if (insertError) throw insertError;
-        dietaId = nueva.id_dieta;
+        if (buscarError) throw buscarError;
+
+        if (dietaExistente) {
+          const { error: updateError } = await supabase
+            .from('dietas')
+            .update({
+              nombre_dieta: `Plan semanal - ${new Date().toLocaleDateString('es-MX')}`,
+              fecha_inicio: new Date().toISOString().split('T')[0],
+              activa: true,
+            })
+            .eq('id_dieta', dietaExistente.id_dieta);
+
+          if (updateError) throw updateError;
+          dietaId = dietaExistente.id_dieta;
+        } else {
+          const { data: nueva, error: insertError } = await supabase
+            .from('dietas')
+            .insert({
+              id_nutriologo: user?.nutriologoId,
+              id_paciente: parseInt(selectedPaciente),
+              nombre_dieta: `Plan semanal - ${new Date().toLocaleDateString('es-MX')}`,
+              fecha_inicio: new Date().toISOString().split('T')[0],
+              activa: true,
+            })
+            .select('id_dieta')
+            .single();
+
+          if (insertError) throw insertError;
+          dietaId = nueva.id_dieta;
+        }
       }
 
       const { error: deleteDetalleError } = await supabase
@@ -782,6 +835,41 @@ export function GestionDietas() {
       }
 
       toast.success(isEditing ? '¡Plan actualizado!' : '¡Plan asignado!');
+      try {
+        const { data: nutriologoInfo } = await supabase
+          .from('nutriologos')
+          .select('nombre, apellido')
+          .eq('id_nutriologo', user?.nutriologoId)
+          .single();
+
+        const nutriologoNombre = nutriologoInfo 
+          ? `${nutriologoInfo.nombre} ${nutriologoInfo.apellido}`
+          : undefined;
+
+        const dietaNombre = `Plan semanal - ${new Date().toLocaleDateString('es-MX')}`;
+        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'https://servidor-nutri-u.vercel.app';
+        const notificationResponse = await fetch(`${backendUrl}/notifications/diet-updated`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            pacienteId: parseInt(selectedPaciente),
+            nutriologoNombre,
+            dietaNombre,
+            action: isEditing ? 'updated' : 'created',
+          }),
+        });
+
+        if (notificationResponse.ok) {
+          const result = await notificationResponse.json();
+          if (result.sent > 0) {
+          }
+        } else {
+        }
+      } catch (notifError) {
+      }
+
       setIsDialogOpen(false);
 
       setDietaByDay(createEmptyWeeklyDietaData());
@@ -796,7 +884,6 @@ export function GestionDietas() {
 
       await fetchData();
     } catch (err: any) {
-      console.error('Error al guardar:', err);
       const detalle = [err?.message, err?.details, err?.hint, err?.code].filter(Boolean).join(' | ');
       toast.error('Error al guardar: ' + (detalle || 'Revisa consola'));
     } finally {
@@ -936,8 +1023,16 @@ export function GestionDietas() {
     doc.text('Av. Kino y Calle 7 #1/2 Col. Médica, San Luis Río Colorado, Sonora', 148.5, finalY + 16, { align: 'center' });
     doc.text('@nutlotbhm', 148.5, finalY + 20, { align: 'center' });
 
-    doc.save(`Plan_${dieta.pacientes.nombre || ''}_${dieta.pacientes.apellido || ''}_${new Date().toISOString().split('T')[0]}.pdf`);
-    toast.success('PDF generado');
+    const blob = doc.output('blob');
+    const previewUrl = URL.createObjectURL(blob);
+    const previewLink = document.createElement('a');
+    previewLink.href = previewUrl;
+    previewLink.target = '_blank';
+    previewLink.rel = 'noopener';
+    previewLink.click();
+    setTimeout(() => URL.revokeObjectURL(previewUrl), 60 * 60 * 1000);
+
+    toast.success('Vista previa del PDF abierta. Descárgalo desde el visor si lo deseas.');
   };
 
   if (loading) return <AnimatedLoadingScreen />;
@@ -1109,28 +1204,42 @@ export function GestionDietas() {
                                           value={alimento.id_alimento.toString()}
                                           className="font-bold text-sm py-3"
                                         >
-                                          {alimento.nombre} ({alimento.calorias_por_100g} kcal/100g)
+                                          {alimento.nombre}
                                         </SelectItem>
                                       ))
                                     )}
                                   </SelectContent>
                                 </Select>
-
-                                {/* Selector de cantidad y unidad */}
                                 <div className="grid grid-cols-[1fr_auto_auto] gap-2">
                                   <Input
                                     type="number"
                                     placeholder="Cant."
-                                    value={tempCantidad[activeDia]?.[meal.key] || '1'}
+                                    value={tempCantidad[activeDia]?.[meal.key] || '0'}
                                     onChange={(e) => {
-                                      let val = e.target.value;
-                                      if (val === '') val = '1';
+                                      const val = sanitizeCantidadInput(e.target.value);
                                       setTempCantidad(prev => ({
                                         ...prev,
                                         [activeDia]: { ...prev[activeDia], [meal.key]: val }
                                       }));
                                     }}
-                                    min="0.01"
+                                    onFocus={() => {
+                                      if ((tempCantidad[activeDia]?.[meal.key] || '0') === '0') {
+                                        setTempCantidad(prev => ({
+                                          ...prev,
+                                          [activeDia]: { ...prev[activeDia], [meal.key]: '' }
+                                        }));
+                                      }
+                                    }}
+                                    onBlur={() => {
+                                      const current = tempCantidad[activeDia]?.[meal.key] || '';
+                                      if (!current) {
+                                        setTempCantidad(prev => ({
+                                          ...prev,
+                                          [activeDia]: { ...prev[activeDia], [meal.key]: '0' }
+                                        }));
+                                      }
+                                    }}
+                                    min="0"
                                     step="0.01"
                                     className="border-2 border-[#D1E8D5] rounded-xl h-10 text-center"
                                   />
@@ -1264,7 +1373,7 @@ export function GestionDietas() {
                   </div>
                 </div>
 
-                <style jsx global>{`
+                <style>{`
                   .custom-dialog-scroll::-webkit-scrollbar {
                     width: 6px;
                   }
@@ -1283,8 +1392,6 @@ export function GestionDietas() {
             </Dialog>
           </div>
         </div>
-
-        {/* Buscador Estilizado */}
         <div className="relative max-w-2xl">
           <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-[#2E8B57]" />
           <Input
@@ -1294,8 +1401,6 @@ export function GestionDietas() {
             className="w-full pl-14 py-5 bg-white border-2 border-[#D1E8D5] rounded-2xl focus:border-[#2E8B57] outline-none text-sm font-black tracking-widest uppercase placeholder:text-gray-400 shadow-sm transition-all"
           />
         </div>
-
-        {/* Lista de dietas con Accordion */}
         <div className="space-y-4">
           {filteredDietas.length === 0 ? (
             <div className="bg-white rounded-[2.5rem] border-2 border-[#D1E8D5] p-20 flex flex-col items-center justify-center text-center">
@@ -1351,7 +1456,7 @@ export function GestionDietas() {
                             }}
                             className="w-full sm:w-auto border-2 border-[#D1E8D5] text-[#2E8B57] font-black text-[11px] sm:text-xs uppercase rounded-xl px-3 sm:px-6 h-10 flex items-center justify-center gap-2"
                           >
-                            <Download className="h-4 w-4" /> Exportar PDF
+                            <Download className="h-4 w-4" /> Ver PDF
                           </Button>
 
                           <Button 
@@ -1430,8 +1535,6 @@ export function GestionDietas() {
             </Accordion>
           )}
         </div>
-
-        {/* Modal personalizado de eliminar */}
         <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
           <DialogContent className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] max-w-md max-h-[90vh] overflow-y-auto rounded-[2rem] sm:rounded-[2.5rem] border-2 border-[#D1E8D5] bg-white p-4 sm:p-6 md:p-10 text-center">
             <DialogHeader>
@@ -1473,5 +1576,3 @@ function groupByDay(detalles: any[]) {
   });
   return groups;
 }
-
-//Listo

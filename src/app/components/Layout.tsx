@@ -69,11 +69,6 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
     setPendingDialogOpen(false);
     setPendingAction(null);
   };
-
-  // Depuración
-  console.log('Layout - User completo:', user);
-  console.log('Layout - fotoPerfil del nutriólogo:', user?.fotoPerfil);
-
   const adminMenuItems = [
     { id: 'dashboard', label: 'Home', icon: Home },
     { id: 'nutriologos', label: 'Nutriólogos', icon: Users },
@@ -108,34 +103,23 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
       await logout();
     });
   };
-
-  // Usar fotoPerfil (camelCase) que ya viene completa desde el contexto
   const isNutriologo = user?.rol === 'nutriologo';
   const profileImage = isNutriologo && user?.fotoPerfil 
     ? user.fotoPerfil 
     : null;
-
-  console.log('Layout - URL final para foto de perfil:', profileImage);
-
   return (
     <div className="flex h-screen bg-[#F8FFF9] font-sans p-0 md:p-6 gap-6 relative overflow-hidden">
-      
-      {/* OVERLAY PARA MÓVIL */}
       {isMobileMenuOpen && (
         <div 
           className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40 lg:hidden transition-all"
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
-
-      {/* SIDEBAR */}
       <aside className={`
         fixed inset-y-0 left-0 z-50 w-72 bg-white border-2 border-[#D1E8D5] flex flex-col rounded-none md:rounded-[2.5rem] shadow-xl lg:shadow-sm 
         transition-transform duration-500 ease-in-out lg:relative lg:translate-x-0
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        
-        {/* Logo Section */}
         <div className="p-8 flex items-center justify-between">
           <div className="flex flex-col items-start">
             <div className="h-20 rounded-2xl overflow-hidden flex items-center justify-center">
@@ -146,8 +130,6 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
             <X size={24} />
           </button>
         </div>
-
-        {/* Navegación */}
         <nav className="flex-1 px-4 space-y-2 overflow-y-auto custom-scrollbar">
           <p className="px-4 text-xs font-black text-gray-400 uppercase tracking-[2px] mb-4">Menú Principal</p>
           {menuItems.map((item) => {
@@ -169,8 +151,6 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
             );
           })}
         </nav>
-
-        {/* Perfil & Logout - con foto de perfil para nutriólogo */}
         <div className="p-6 mt-auto">
           <div className="bg-[#F8FFF9] border-2 border-[#F0FFF4] rounded-[2rem] p-5 space-y-4">
             <div className="flex items-center gap-3">
@@ -201,11 +181,7 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
           </div>
         </div>
       </aside>
-
-      {/* MAIN CONTENT AREA */}
       <main className="flex-1 bg-white border-none md:border-2 border-[#D1E8D5] rounded-none md:rounded-[2.5rem] shadow-sm overflow-hidden flex flex-col relative">
-        
-        {/* HEADER MÓVIL */}
         <div className="lg:hidden p-6 border-b border-[#F0FFF4] flex items-center justify-between bg-white sticky top-0 z-30">
            <button 
              onClick={() => setIsMobileMenuOpen(true)}
@@ -222,8 +198,6 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
 
            <div className="w-12" />
         </div>
-
-        {/* Contenido */}
         <div className="flex-1 overflow-auto custom-scrollbar relative">
           <div className="absolute top-0 right-0 p-20 opacity-[0.03] pointer-events-none select-none">
              <Leaf size={400} className="text-[#2E8B57] rotate-12" />
@@ -267,7 +241,7 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
         </AlertDialogContent>
       </AlertDialog>
 
-      <style jsx global>{`
+      <style>{`
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #D1E8D5; border-radius: 10px; }

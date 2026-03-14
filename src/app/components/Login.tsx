@@ -31,8 +31,6 @@ import {
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
-
-// --- FONDO DE PATRÓN INFINITO ---
 const StaticBackground = memo(() => {
   const icons = [
     <Leaf size={26} />, <Apple size={26} />, <Stethoscope size={26} />, 
@@ -113,9 +111,7 @@ export function Login() {
         setNotification({ msg: 'Credenciales incorrectas o usuario no autorizado', type: 'error' });
       } else {
         setNotification({ msg: '¡Bienvenido de nuevo!', type: 'success' });
-        // Animar salida
         setTimeout(() => setIsExiting(true), 1000);
-        // Redirigir al dashboard después de animación
         setTimeout(() => navigate('/'), 1600); // ← Redirigir a ruta protegida (dashboard)
       }
     } catch (error) {
@@ -146,7 +142,6 @@ export function Login() {
       setResetOpen(false);
       setResetEmail('');
     } catch (error: any) {
-      console.error('Error al enviar recuperación:', error);
       toast.error(error.message || 'Error al enviar el enlace de recuperación');
     } finally {
       setResetLoading(false);
@@ -156,8 +151,6 @@ export function Login() {
   return (
     <div className="min-h-screen flex items-center justify-center p-6 font-sans relative overflow-hidden bg-[#F0FFF4]">
       <StaticBackground />
-
-      {/* Notificación flotante con animación */}
       {notification && (
         <div className={`fixed top-8 right-8 z-[100] flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl border-2 animate-slide-in ${
           notification.type === 'error' 
@@ -171,12 +164,8 @@ export function Login() {
           </button>
         </div>
       )}
-
-      {/* CUADRO DE LOGIN: Grande, Profesional y con Animación de entrada/salida */}
       <div className={`w-full max-w-lg bg-white/95 backdrop-blur-2xl rounded-[3rem] shadow-[0_40px_100px_rgba(27,67,50,0.25)] border-2 border-[#D1E8D5] overflow-hidden z-10 relative 
         ${isExiting ? 'animate-exit-scale' : 'animate-enter-up'}`}>
-        
-        {/* Header */}
         <div className="px-12 pt-16 pb-8 text-center">
           <div className="inline-flex flex-col items-center">
             <div className="h-24 overflow-hidden flex items-center justify-center mb-1">
@@ -190,8 +179,6 @@ export function Login() {
 
         <div className="px-12 pb-16">
           <form onSubmit={handleSubmit} className="space-y-7" noValidate>
-            
-            {/* Input Email */}
             <div className="space-y-3">
               <label className="block text-xs font-black uppercase tracking-[2px] text-[#4A4A4A] ml-2">
                 Correo Electrónico
@@ -209,8 +196,6 @@ export function Login() {
                 />
               </div>
             </div>
-
-            {/* Input Contraseña */}
             <div className="space-y-3">
               <label className="block text-xs font-black uppercase tracking-[2px] text-[#4A4A4A] ml-2">
                 Contraseña
@@ -235,8 +220,6 @@ export function Login() {
                 </button>
               </div>
             </div>
-
-            {/* Enlace "¿Olvidaste tu contraseña?" */}
             <div className="text-center mt-4">
               <button
                 type="button"
@@ -246,8 +229,6 @@ export function Login() {
                 ¿Olvidaste tu contraseña?
               </button>
             </div>
-
-            {/* Botón de login */}
             <button
               type="submit"
               className="w-full py-5 bg-[#1B4332] hover:bg-[#2D6A4F] text-white font-black text-lg uppercase tracking-[4px] rounded-3xl shadow-2xl shadow-green-200 transition-all active:scale-[0.96] flex items-center justify-center gap-4 mt-6 overflow-hidden relative group"
@@ -265,8 +246,6 @@ export function Login() {
           </div>
         </div>
       </div>
-
-      {/* Modal para resetear contraseña */}
       <Dialog open={resetOpen} onOpenChange={setResetOpen}>
         <DialogContent className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] max-w-md max-h-[90vh] overflow-y-auto rounded-[2rem] sm:rounded-[2.5rem] border-2 border-[#D1E8D5] p-4 sm:p-6 md:p-8 bg-white">
           <DialogHeader>
@@ -316,14 +295,11 @@ export function Login() {
         </DialogContent>
       </Dialog>
 
-      <style jsx global>{`
-        /* Animación de entrada: sube y aparece */
+      <style>{`
         @keyframes enterUp {
           from { transform: translateY(50px); opacity: 0; }
           to { transform: translateY(0); opacity: 1; }
         }
-        
-        /* Animación de salida: se encoge y desaparece */
         @keyframes exitScale {
           from { transform: scale(1); opacity: 1; }
           to { transform: scale(0.9); opacity: 0; filter: blur(10px); }

@@ -1,15 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
-import { Users, Calendar, DollarSign, TrendingUp, CheckCircle2, LayoutDashboard } from 'lucide-react';
+import { Users, Calendar, DollarSign, TrendingUp, LayoutDashboard } from 'lucide-react';
 import { useAuth } from '@/app/context/useAuth';
 import { supabase } from '@/app/context/supabaseClient';
 import { toast } from 'sonner';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Avatar, AvatarFallback, AvatarImage } from '@/app/components/ui/avatar';
+import { DashboardNutriologoCharts } from '@/app/components/nutriologo/DashboardNutriologoCharts';
 
-const COLORS = ['#2E8B57', '#3CB371', '#D1E8D5'];
-
-// Ajusta este base URL según tu bucket real en Supabase Storage
 const STORAGE_PUBLIC_URL = 'https://hthnkzwjotwqhvjgqhfv.supabase.co/storage/v1/object/public/perfiles/';
 
 function AnimatedLoadingScreen() {
@@ -107,7 +104,7 @@ function AnimatedLoadingScreen() {
   );
 }
 
-export function DashboardNutriologo() {
+export function DashboardNutriologo({ onTabChange }: { onTabChange?: (tab: string) => void }) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
@@ -129,10 +126,6 @@ export function DashboardNutriologo() {
       setErrorMsg('No se detectó sesión de nutriólogo válida. Inicia sesión nuevamente.');
       return;
     }
-
-    console.log('[DashboardNutriologo] UUID del usuario logueado (auth):', user.id);
-    console.log('[DashboardNutriologo] ID Nutriólogo (tabla):', user.nutriologoId);
-
     fetchDashboardData();
   }, [user]);
 
@@ -140,7 +133,6 @@ export function DashboardNutriologo() {
     setLoading(true);
     setErrorMsg('');
     try {
-      // 1. Obtener id_nutriologo y tarifa
       const { data: nutriologo, error: errNut } = await supabase
         .from('nutriologos')
         .select('id_nutriologo, nombre, tarifa_consulta')
@@ -148,14 +140,11 @@ export function DashboardNutriologo() {
         .single();
 
       if (errNut || !nutriologo) {
-        console.error('[DashboardNutriologo] Error al buscar nutriólogo:', errNut);
         throw new Error('No se encontró tu perfil de nutriólogo');
       }
 
       const nutriologoId = nutriologo.id_nutriologo;
       const tarifa = nutriologo.tarifa_consulta || 0;
-
-      // 2. Conteo de pacientes
       const { count: misPacientesCount, error: errPac } = await supabase
         .from('paciente_nutriologo')
         .select('count', { count: 'exact', head: true })
@@ -163,8 +152,6 @@ export function DashboardNutriologo() {
         .eq('activo', true);
 
       if (errPac) throw errPac;
-
-      // 3. Todas las citas (para conteos)
       const { data: citas, error: errCitas } = await supabase
         .from('citas')
         .select('id_cita, fecha_hora, estado')
@@ -173,49 +160,52 @@ export function DashboardNutriologo() {
 
       if (errCitas) throw errCitas;
 
-      const citasActivas = citas.filter(c => ['confirmada', 'pendiente'].includes(c.estado)).length;
+      const citasActivas = citas.filter(c => ['confirmada', 'pendiente', 'pendiente_pagado'].includes(c.estado)).length;
       const citasCompletadas = citas.filter(c => c.estado === 'completada').length;
       const citasTotales = citas.length;
-
-      // 4. Ingresos mes actual
       const now = new Date();
       const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 19);
       const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString().slice(0, 19);
+      const sixMonthsStart = new Date(now.getFullYear(), now.getMonth() - 5, 1).toISOString().slice(0, 19);
 
-      const { data: pagosMesActual, error: errPagos } = await supabase
+      const { data: pagosRango, error: errPagos } = await supabase
         .from('pagos')
-        .select('monto')
+        .select('monto, fecha_pago')
         .eq('id_nutriologo', nutriologoId)
         .eq('estado', 'completado')
-        .gte('fecha_pago', currentMonthStart)
+        .gte('fecha_pago', sixMonthsStart)
         .lte('fecha_pago', currentMonthEnd);
 
       if (errPagos) throw errPagos;
 
-      const ingresosMes = pagosMesActual?.reduce((sum, p) => sum + Number(p.monto || 0), 0) || 0;
+      const ingresosMes =
+        pagosRango?.reduce((sum, p) => {
+          if (!p.fecha_pago || p.fecha_pago < currentMonthStart || p.fecha_pago > currentMonthEnd) {
+            return sum;
+          }
 
-      // 5. Ingresos por mes (últimos 6 meses)
+          return sum + Number(p.monto || 0);
+        }, 0) || 0;
+
+      const monthlyMap = new Map<string, number>();
+      pagosRango?.forEach((p) => {
+        if (!p.fecha_pago) return;
+
+        const paymentDate = new Date(p.fecha_pago);
+        const key = `${paymentDate.getFullYear()}-${String(paymentDate.getMonth() + 1).padStart(2, '0')}`;
+        const previous = monthlyMap.get(key) || 0;
+        monthlyMap.set(key, previous + Number(p.monto || 0));
+      });
+
       const ingresosPorMes = [];
       for (let i = 5; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const mesStart = d.toISOString().slice(0, 19);
-        const mesEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59).toISOString().slice(0, 19);
         const nombreMes = d.toLocaleString('es-MX', { month: 'short' });
         const mesDisplay = nombreMes.charAt(0).toUpperCase() + nombreMes.slice(1);
-
-        const { data: pagosMes, error } = await supabase
-          .from('pagos')
-          .select('monto')
-          .eq('id_nutriologo', nutriologoId)
-          .eq('estado', 'completado')
-          .gte('fecha_pago', mesStart)
-          .lte('fecha_pago', mesEnd);
-
-        const ingresos = pagosMes?.reduce((sum, p) => sum + Number(p.monto || 0), 0) || 0;
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const ingresos = monthlyMap.get(key) || 0;
         ingresosPorMes.push({ mes: mesDisplay, ingresos });
       }
-
-      // 6. Próximas citas SOLO de HOY, sin completadas, ordenadas por hora
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
       const todayEnd = new Date();
@@ -234,15 +224,13 @@ export function DashboardNutriologo() {
           )
         `)
         .eq('id_nutriologo', nutriologoId)
-        .in('estado', ['confirmada', 'pendiente'])  // Solo pendientes y confirmadas
+        .in('estado', ['confirmada', 'pendiente', 'pendiente_pagado'])  // Pendientes, pendientes pagadas y confirmadas
         .gte('fecha_hora', todayStart.toISOString())  // Desde 00:00 hoy
         .lte('fecha_hora', todayEnd.toISOString())    // Hasta 23:59 hoy
         .order('fecha_hora', { ascending: true })     // Más cercana primero
         .limit(6);
 
       if (errProx) throw errProx;
-
-      // Construir URLs públicas para fotos
       const proximasCitas = proximasCitasRaw.map(cita => {
         let fotoUrl = cita.pacientes?.foto_perfil;
 
@@ -256,12 +244,11 @@ export function DashboardNutriologo() {
           foto_perfil: fotoUrl || null
         };
       });
-
-      // 7. Citas por estado para gráfica
       const citasPorEstado = [
         { name: 'Confirmadas', value: citas.filter(c => c.estado === 'confirmada').length },
         { name: 'Completadas', value: citasCompletadas },
-        { name: 'Pendientes', value: citas.filter(c => c.estado === 'pendiente').length }
+        { name: 'Pendientes', value: citas.filter(c => c.estado === 'pendiente' || c.estado === 'pendiente_pagado').length },
+        { name: 'Canceladas', value: citas.filter(c => c.estado === 'cancelada').length }
       ];
 
       setDashboardData({
@@ -275,7 +262,6 @@ export function DashboardNutriologo() {
         ingresosPorMes,
       });
     } catch (err: any) {
-      console.error('Error cargando dashboard:', err);
       toast.error('No se pudieron cargar las estadísticas');
       setErrorMsg(err.message || 'Error desconocido');
     } finally {
@@ -303,8 +289,6 @@ export function DashboardNutriologo() {
   return (
     <div className="min-h-screen p-6 md:p-10 font-sans bg-[#F8FFF9] space-y-10">
       <div className="max-w-7xl mx-auto space-y-10">
-        
-        {/* Encabezado */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 px-2">
           <div>
             <div className="inline-flex flex-col items-start">
@@ -318,8 +302,6 @@ export function DashboardNutriologo() {
             </p>
           </div>
         </div>
-
-        {/* Tarjetas estadísticas */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {[
             { title: 'Mis Pacientes', val: dashboardData.misPacientesCount, desc: 'Pacientes activos', icon: Users, color: '#2E8B57' },
@@ -337,62 +319,13 @@ export function DashboardNutriologo() {
             </div>
           ))}
         </div>
-
-        {/* Gráficas */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className="bg-white p-8 rounded-[2.5rem] border-2 border-[#D1E8D5] shadow-sm">
-            <h3 className="text-2xl font-black text-[#1A3026] uppercase tracking-[2px] mb-6 flex items-center gap-2">
-              <TrendingUp size={18} className="text-[#2E8B57]" /> Ingresos por Mes
-            </h3>
-            <div className="h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dashboardData.ingresosPorMes}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F0FFF4" />
-                  <XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{fill: '#1A3026', fontWeight: 'bold', fontSize: 15}} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#1A3026', fontWeight: 'bold', fontSize: 15}} />
-                  <Tooltip cursor={{fill: '#F0FFF4'}} contentStyle={{borderRadius: '15px', border: '2px solid #D1E8D5'}} />
-                  <Bar dataKey="ingresos" fill="#2E8B57" radius={[10, 10, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          <div className="bg-white p-8 rounded-[2.5rem] border-2 border-[#D1E8D5] shadow-sm">
-            <h3 className="text-2xl font-black text-[#1A3026] uppercase tracking-[2px] mb-6 flex items-center gap-2">
-              <CheckCircle2 size={18} className="text-[#2E8B57]" /> Estado de Citas
-            </h3>
-            <div className="h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={dashboardData.citasPorEstado}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={100}
-                    paddingAngle={8}
-                    dataKey="value"
-                  >
-                    {dashboardData.citasPorEstado.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} strokeWidth={0} />
-                    ))}
-                  </Pie>
-                  <Tooltip contentStyle={{borderRadius: '15px', border: '2px solid #D1E8D5'}} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="flex justify-center gap-4 mt-2">
-                {dashboardData.citasPorEstado.map((entry, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded-full" style={{backgroundColor: COLORS[i]}} />
-                    <span className="text-xs font-black uppercase text-gray-500">{entry.name}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          <DashboardNutriologoCharts
+            ingresosPorMes={dashboardData.ingresosPorMes}
+            citasPorEstado={dashboardData.citasPorEstado}
+            onTabChange={onTabChange}
+          />
         </div>
-
-        {/* Próximas citas con AVATAR - SIN CAMBIOS EN DISEÑO */}
         <div className="bg-white p-8 rounded-[2.5rem] border-2 border-[#D1E8D5] shadow-sm">
           <h3 className="text-lg font-black text-[#1A3026] uppercase tracking-[3px] mb-8">Próximas Citas</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -428,8 +361,8 @@ export function DashboardNutriologo() {
                     <p className="font-black text-[#2E8B57] text-lg">
                       ${cita.monto.toLocaleString()}.00
                     </p>
-                    <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-full ${cita.estado === 'completada' ? 'bg-green-100 text-green-600' : 'bg-orange-100 text-orange-600'}`}>
-                      {cita.estado}
+                    <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-full ${cita.estado === 'completada' ? 'bg-green-100 text-green-600' : cita.estado === 'pendiente_pagado' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-600'}`}>
+                      {cita.estado === 'pendiente_pagado' ? 'pendiente pagado' : cita.estado}
                     </span>
                   </div>
                 </div>

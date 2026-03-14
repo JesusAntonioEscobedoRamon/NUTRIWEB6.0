@@ -13,8 +13,6 @@ import {
 import { toast } from 'sonner';
 import { supabase } from '@/app/context/supabaseClient';
 import { Clock } from 'lucide-react';
-
-// Componente de carga animado para perfil
 function AnimatedProfileLoadingScreen() {
   const iconRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
@@ -127,8 +125,6 @@ export function Perfil() {
 
   const [previewImage, setPreviewImage] = useState<string | null>(user?.fotoPerfil || null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
-
-  // Simular carga inicial
   useEffect(() => {
     const timer = setTimeout(() => {
       setLoading(false);
@@ -136,8 +132,6 @@ export function Perfil() {
 
     return () => clearTimeout(timer);
   }, []);
-
-  // Detectar cambios
   const hasChanges = JSON.stringify(formData) !== JSON.stringify({
     nombre: user?.nombre || '',
     apellido: user?.apellido || '',
@@ -154,8 +148,6 @@ export function Perfil() {
       (window as Window & { __hasPendingChanges?: boolean }).__hasPendingChanges = false;
     };
   }, [isEditing, hasChanges]);
-
-  // Bloqueo de navegación si hay cambios sin guardar
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (isEditing && hasChanges) {
@@ -218,7 +210,6 @@ export function Perfil() {
       setFormData(prev => ({ ...prev, fotoPerfil: imageUrl }));
       toast.success('Foto subida correctamente');
     } catch (err: any) {
-      console.error('Error subiendo foto:', err);
       toast.error('Error al subir la foto');
     } finally {
       setUploadingPhoto(false);
@@ -251,7 +242,6 @@ export function Perfil() {
       toast.success('Perfil actualizado correctamente');
       setIsEditing(false);
     } catch (error: any) {
-      console.error('Error al guardar perfil:', error);
       toast.error('Error al guardar cambios');
     }
   };
@@ -268,8 +258,6 @@ export function Perfil() {
     setPreviewImage(user?.fotoPerfil || null);
     setIsEditing(false);
   };
-
-  // Función para formatear número con comas (ej: 1200 → "1,200")
   const formatNumberWithCommas = (num: number) => {
     return num.toLocaleString('es-MX');
   };
@@ -307,7 +295,6 @@ export function Perfil() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* LADO IZQUIERDO: FOTO */}
           <div className="lg:col-span-4">
             <div className="bg-white p-8 rounded-[2.5rem] border-2 border-[#D1E8D5] shadow-sm text-center">
               <div className="relative inline-block mb-6">
@@ -346,8 +333,6 @@ export function Perfil() {
               </div>
             </div>
           </div>
-
-          {/* LADO DERECHO: FORMULARIO */}
           <div className="lg:col-span-8">
             <div className="bg-white p-8 md:p-12 rounded-[2.5rem] border-2 border-[#D1E8D5]">
               <form onSubmit={handleSubmit} className="space-y-6">
@@ -405,8 +390,6 @@ export function Perfil() {
                     </div>
                   </div>
                 </div>
-
-                {/* subio x2 xd */}
                 <div>
                   <label className="text-xs md:text-sm font-black uppercase text-gray-500 ml-1">Descripción Profesional</label>
                   <textarea

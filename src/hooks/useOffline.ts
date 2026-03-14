@@ -1,4 +1,3 @@
-// src/hooks/useOffline.ts
 import { useEffect, useState, useRef } from "react";
 import { toast } from "sonner";
 import { syncPendingActions } from "@/utils/db";
@@ -46,8 +45,6 @@ export function useOffline() {
 
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
-
-    // Inicial sin disparar eventos
     const initial = navigator.onLine;
     setIsOnline(initial);
     prevOnline.current = initial;

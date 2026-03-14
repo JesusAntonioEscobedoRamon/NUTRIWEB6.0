@@ -12,8 +12,9 @@ import { supabase } from '@/app/context/supabaseClient';
 import { Calendar, Clock, Plus, CheckCircle, History, LayoutDashboard, CalendarClock } from 'lucide-react';
 import { toast } from 'sonner';
 import { Avatar, AvatarFallback, AvatarImage } from '@/app/components/ui/avatar';
-import { DateTime } from 'luxon'; // ← Nueva importación
+import { DateTime } from 'luxon';
 import { es } from 'date-fns/locale';
+import { dbgGroup, dbgGroupEnd, dbgLog, dbgOk, dbgWarn, dbgError } from '@/utils/debug';
 
 const SONORA_TIMEZONE = 'America/Phoenix'; // San Luis Río Colorado, Sonora
 const STORAGE_PUBLIC_URL = 'https://hthnkzwjotwqhvjgqhfv.supabase.co/storage/v1/object/public/perfiles/';
@@ -24,6 +25,11 @@ const APPOINTMENT_TIME_SLOTS = [
   '11:00', '11:30', '12:00', '12:30', '13:00', '13:30',
   '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00'
 ];
+
+const isoDateToLocalDate = (isoDate: string): Date => {
+  const [year, month, day] = isoDate.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
 
 function AnimatedLoadingScreen() {
   const iconRef = useRef<HTMLDivElement>(null);
@@ -122,6 +128,7 @@ function AnimatedLoadingScreen() {
 
 export function GestionCitas() {
   const { user } = useAuth();
+  const tarifaConsulta = Number(user?.tarifa || 0);
   const currentYear = new Date().getFullYear();
   const minYear = Math.min(currentYear, 2027);
   const maxYear = Math.max(currentYear, 2027);
@@ -147,23 +154,30 @@ export function GestionCitas() {
       toast.error('No se detectó ID de nutriólogo');
       return;
     }
-
-    console.log('[GestionCitas] Nutriólogo ID (integer):', user.nutriologoId);
-    console.log('[GestionCitas] Auth UUID:', user.id);
-
     const fetchData = async () => {
+      dbgGroup('screen', `GestionCitas — nutriologoId=${user.nutriologoId}`);
       setLoading(true);
+
+      const timeoutId = setTimeout(() => {
+        dbgError('GestionCitas: timeout 15s — desbloqueo forzado');
+        console.error('[NutriU] GestionCitas: timeout esperando datos de Supabase.');
+        setLoading(false);
+      }, 15000);
+
       try {
         const nutriologoId = Number(user.nutriologoId);
-
-        // 1. Pacientes asignados + foto_perfil
+        dbgLog('Cargando relaciones paciente_nutriologo...');
         const { data: relaciones, error: errRel } = await supabase
           .from('paciente_nutriologo')
           .select('*')
           .eq('id_nutriologo', nutriologoId)
           .eq('activo', true);
 
-        if (errRel) throw errRel;
+        if (errRel) {
+          dbgError('Error paciente_nutriologo', errRel);
+          throw errRel;
+        }
+        dbgLog(`Relaciones: ${relaciones?.length ?? 0}`);
 
         const pacienteIds = relaciones?.map(r => r.id_paciente) || [];
         const activeSinceByPaciente = new Map<number, string>();
@@ -199,8 +213,6 @@ export function GestionCitas() {
           setPacientes(pacientesConFoto);
           setFilteredPacientes(pacientesConFoto);
         }
-
-        // 2. Citas con foto_perfil
         const { data: citasData, error: errCitas } = await supabase
           .from('citas')
           .select(`
@@ -246,31 +258,29 @@ export function GestionCitas() {
             pacienteNombre: `${paciente?.nombre || ''} ${paciente?.apellido || ''}`,
             foto_perfil: fotoUrl || null,
             pagada: c.pagos?.some(p => p.estado === 'completado') || false,
-            monto: c.pagos?.[0]?.monto || 800
+            monto: c.pagos?.[0]?.monto ?? tarifaConsulta
           };
         });
 
         setCitas(citasFormateadas);
+        dbgOk(`GestionCitas cargada: ${citasFormateadas.length} citas`);
       } catch (err: any) {
-        console.error('Error cargando datos:', err);
+        dbgError('GestionCitas fetchData error', err);
+        console.error('[NutriU] GestionCitas error:', err?.message ?? err);
         toast.error('No se pudieron cargar las citas');
       } finally {
+        clearTimeout(timeoutId);
         setLoading(false);
+        dbgGroupEnd();
       }
     };
 
     fetchData();
   }, [user?.nutriologoId]);
-
-  // Filtrar citas por fecha seleccionada (en zona horaria Sonora)
   const filterCitasByDate = (dateStr: string) => {
     if (!dateStr) return citas;
-
-    // Crear rango del día en Sonora
     const selectedDay = DateTime.fromISO(dateStr, { zone: SONORA_TIMEZONE }).startOf('day');
     const endOfDay = selectedDay.endOf('day');
-
-    // Convertir a UTC para comparar con fecha_hora guardada
     const startUTC = selectedDay.toUTC().toISO();
     const endUTC = endOfDay.toUTC().toISO();
 
@@ -281,12 +291,14 @@ export function GestionCitas() {
   };
 
   const citasFiltradas = filterCitasByDate(selectedDate);
-  const citasPendientes = citasFiltradas.filter(c => c.estado === 'pendiente' || c.estado === 'confirmada');
+  const citasPendientes = citasFiltradas.filter(
+    c => c.estado === 'pendiente' || c.estado === 'pendiente_pagado' || c.estado === 'confirmada'
+  );
   const citasCompletadas = citasFiltradas.filter(c => c.estado === 'completada');
-  const draftDateObject = draftSelectedDate ? DateTime.fromISO(draftSelectedDate).toJSDate() : undefined;
-  const fechaDateObject = fecha ? DateTime.fromISO(fecha).toJSDate() : undefined;
-  const minDateObject = DateTime.fromISO(minDate).toJSDate();
-  const maxDateObject = DateTime.fromISO(maxDate).toJSDate();
+  const draftDateObject = draftSelectedDate ? isoDateToLocalDate(draftSelectedDate) : undefined;
+  const fechaDateObject = fecha ? isoDateToLocalDate(fecha) : undefined;
+  const minDateObject = isoDateToLocalDate(minDate);
+  const maxDateObject = isoDateToLocalDate(maxDate);
   const selectedPacienteInfo = pacientes.find(
     (p) => p.id_paciente.toString() === selectedPaciente
   );
@@ -303,8 +315,6 @@ export function GestionCitas() {
   );
   const morningSlots = APPOINTMENT_TIME_SLOTS.filter((slot) => Number(slot.split(':')[0]) < 12);
   const afternoonSlots = APPOINTMENT_TIME_SLOTS.filter((slot) => Number(slot.split(':')[0]) >= 12);
-
-  // Búsqueda en tiempo real
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     const query = e.target.value.toLowerCase().trim();
     setSearchQuery(query);
@@ -322,8 +332,6 @@ export function GestionCitas() {
 
     setFilteredPacientes(filtered);
   };
-
-  // Enter para autoseleccionar si solo queda 1 resultado
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -434,6 +442,8 @@ export function GestionCitas() {
             datos_adicionales: {
               id_cita: citaCreada?.id_cita,
               id_nutriologo: nutriologoId,
+              doctor_nombre: nombreNutriologo || 'Nutriólogo',
+              precio: tarifaConsulta,
               requiere_pago: true,
               estado: 'pendiente_pago',
               subtipo: 'cita_pendiente_pago'
@@ -441,7 +451,6 @@ export function GestionCitas() {
           });
 
         if (notificationError) {
-          console.error('[GestionCitas] Error insertando notificación:', notificationError);
           toast.error(`La cita se agendó, pero falló la notificación: ${notificationError.message || 'Intenta de nuevo'}`);
         } else {
           toast.success('Cita agendada exitosamente');
@@ -455,8 +464,6 @@ export function GestionCitas() {
       setFecha('');
       setHora('');
       setSearchQuery('');
-
-      // Refrescar lista solo de pacientes activos
       const { data: relacionesActivas, error: errRelacionesActivas } = await supabase
         .from('paciente_nutriologo')
         .select('*')
@@ -525,31 +532,24 @@ export function GestionCitas() {
             pacienteNombre: `${paciente?.nombre || ''} ${paciente?.apellido || ''}`,
             foto_perfil: fotoUrl || null,
             pagada: c.pagos?.some(p => p.estado === 'completado') || false,
-            monto: c.pagos?.[0]?.monto || 800
+            monto: c.pagos?.[0]?.monto ?? tarifaConsulta
           };
         });
         setCitas(formateadas);
       }
     } catch (err: any) {
-      console.error('Error al agendar cita:', err);
       toast.error('Error al agendar la cita: ' + (err.message || 'Intenta de nuevo'));
     }
   };
 
-<<<<<<< HEAD
-  const confirmarCita = async (citaId: number, pacienteNombre: string, fecha: string, hora: string, pagada: boolean) => {
-    if (!pagada) {
-      toast.error('No se puede confirmar la cita hasta que esté pagada.');
-=======
   const confirmarCita = async (cita: any) => {
     if (!cita.pagada) {
       toast.error('No puedes confirmar una cita con pago pendiente.');
       return;
     }
 
-    if (cita.estado !== 'pendiente') {
+    if (cita.estado !== 'pendiente' && cita.estado !== 'pendiente_pagado') {
       toast.warning('Solo se pueden confirmar citas pendientes.');
->>>>>>> aae5ee8c31175ff24da8ee04daf680452f26f2c8
       return;
     }
 
@@ -571,7 +571,6 @@ export function GestionCitas() {
       setCitas(prev => prev.map(c => c.id === cita.id ? { ...c, estado: 'confirmada' } : c));
     } catch (err: any) {
       toast.error('Error al confirmar la cita');
-      console.error(err);
     }
   };
 
@@ -604,7 +603,6 @@ export function GestionCitas() {
       setCitas(prev => prev.map(c => c.id === cita.id ? { ...c, estado: 'completada' } : c));
     } catch (err: any) {
       toast.error('Error al finalizar la cita');
-      console.error(err);
     }
   };
 
@@ -614,10 +612,10 @@ export function GestionCitas() {
         return 'bg-blue-100 text-blue-700 border-blue-200';
       case 'completada':
         return 'bg-[#F0FFF4] text-[#2E8B57] border-[#D1E8D5]';
+      case 'pendiente_pagado':
+        return 'bg-emerald-100 text-emerald-700 border-emerald-200';
       case 'pendiente':
         return 'bg-yellow-100 text-yellow-700 border-yellow-200';
-      case 'cancelada':
-        return 'bg-red-100 text-red-700 border-red-200';
       default:
         return 'bg-gray-100 text-gray-700 border-gray-200';
     }
@@ -630,8 +628,6 @@ export function GestionCitas() {
   return (
     <div className="min-h-screen p-6 md:p-10 font-sans bg-[#F8FFF9] space-y-10">
       <div className="max-w-7xl mx-auto space-y-10">
-        
-        {/* Encabezado Principal */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 px-2">
           <div>
             <div className="inline-flex flex-col items-start">
@@ -848,8 +844,6 @@ export function GestionCitas() {
             </Dialog>
           </div>
         </div>
-
-        {/* Selector de fecha - Diseño profesional alternativo */}
         <div className="bg-white p-4 rounded-2xl border border-[#D1E8D5] shadow-sm mb-8 max-w-md">
           <div className="flex items-center justify-between gap-3 mb-3">
             <div>
@@ -935,11 +929,17 @@ export function GestionCitas() {
                   <DateCalendar
                     mode="single"
                     selected={draftDateObject}
-                    onSelect={(date) =>
-                      setDraftSelectedDate(
-                        date ? DateTime.fromJSDate(date, { zone: SONORA_TIMEZONE }).toFormat('yyyy-LL-dd') : ''
-                      )
-                    }
+                    onSelect={(date) => {
+                      if (date) {
+                        const year = date.getFullYear();
+                        const month = String(date.getMonth() + 1).padStart(2, '0');
+                        const day = String(date.getDate()).padStart(2, '0');
+                        const isoDate = `${year}-${month}-${day}`;
+                        setDraftSelectedDate(isoDate);
+                      } else {
+                        setDraftSelectedDate('');
+                      }
+                    }}
                     locale={es}
                     fromDate={minDateObject}
                     toDate={maxDateObject}
@@ -999,8 +999,6 @@ export function GestionCitas() {
             </DialogContent>
           </Dialog>
         </div>
-
-        {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {[
             { label: 'Citas Activas', val: citasPendientes.length, icon: Calendar, color: 'text-blue-500' },
@@ -1018,8 +1016,6 @@ export function GestionCitas() {
             </div>
           ))}
         </div>
-
-        {/* Próximas citas */}
         <Card className="rounded-[2.5rem] border-2 border-[#D1E8D5] shadow-sm overflow-hidden bg-white">
           <CardHeader className="p-8 border-b border-[#F0FFF4] bg-[#F8FFF9]/50">
             <div className="flex items-center justify-between">
@@ -1069,20 +1065,13 @@ export function GestionCitas() {
                       <Badge className={`${cita.pagada ? 'bg-[#F0FFF4] text-[#2E8B57]' : 'bg-red-50 text-red-600'} border-2 px-3 py-1 rounded-xl font-black text-xs uppercase shadow-none`}>
                         {cita.pagada ? 'PAGADA' : 'PENDIENTE PAGO'}
                       </Badge>
-                      {cita.estado === 'pendiente' && (
+                      {(cita.estado === 'pendiente' || cita.estado === 'pendiente_pagado') && (
                         <Button 
                           size="sm"
-<<<<<<< HEAD
-                          onClick={() => confirmarCita(cita.id, cita.pacienteNombre, cita.fecha, cita.hora, cita.pagada)}
-                          disabled={!cita.pagada}
-                          title={!cita.pagada ? 'Debes registrar el pago para confirmar esta cita' : undefined}
-                          className="bg-white border-2 border-[#2E8B57] text-[#2E8B57] hover:bg-[#2E8B57] hover:text-white font-black text-xs uppercase rounded-xl px-4 transition-all"
-=======
                           onClick={() => confirmarCita(cita)}
                           disabled={!cita.pagada}
-                          className="bg-white border-2 border-[#2E8B57] text-[#2E8B57] hover:bg-[#2E8B57] hover:text-white font-black text-xs uppercase rounded-xl px-4 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:text-[#2E8B57]"
+                          className="bg-white border-2 border-[#2E8B57] text-[#2E8B57] hover:bg-[#2E8B57] hover:text-white font-black text-xs uppercase rounded-xl px-4 transition-all"
                           title={!cita.pagada ? 'No disponible: pago pendiente' : 'Confirmar cita'}
->>>>>>> aae5ee8c31175ff24da8ee04daf680452f26f2c8
                         >
                           <CheckCircle className="h-3.5 w-3.5 mr-1" />
                           Confirmar
@@ -1107,8 +1096,6 @@ export function GestionCitas() {
             </div>
           </CardContent>
         </Card>
-
-        {/* SE SUBIUO LOS CAMBIOSSS */}
         <Card className="rounded-[2.5rem] border-2 border-[#D1E8D5] shadow-sm overflow-hidden bg-white">
           <CardHeader className="p-8 border-b border-[#F0FFF4] bg-[#F8FFF9]/50">
             <div className="flex items-center justify-between">
@@ -1143,7 +1130,7 @@ export function GestionCitas() {
                     <Badge variant="outline" className="border-2 border-[#D1E8D5] text-[#2E8B57] font-black text-xs uppercase px-2 py-0.5 rounded-lg mb-1">
                       COMPLETADA
                     </Badge>
-                    <p className="text-base font-black text-[#1A3026] tracking-tight">${cita.monto}</p>
+                    <p className="text-base font-black text-[#1A3026] tracking-tight">${Number(cita.monto || 0).toLocaleString('en-US')}</p>
                   </div>
                 </div>
               ))}

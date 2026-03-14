@@ -23,8 +23,6 @@ interface Nutriologo {
   activo: boolean;
   foto_perfil?: string;
 }
-
-// Componente de carga animado (sin cambios)
 function AnimatedLoadingScreen() {
   const iconRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
@@ -150,7 +148,6 @@ export function GestionNutriologos() {
       if (error) throw error;
       setNutriologos(data || []);
     } catch (err: any) {
-      console.error('Error cargando nutriólogos:', err);
       toast.error('No se pudieron cargar los nutriólogos');
     } finally {
       setLoading(false);
@@ -238,7 +235,6 @@ export function GestionNutriologos() {
 
     try {
       if (editingId) {
-        // Editar
         const { error } = await supabase
           .from('nutriologos')
           .update(nutriologoData)
@@ -247,7 +243,6 @@ export function GestionNutriologos() {
         if (error) throw error;
         toast.success('Nutriólogo actualizado exitosamente');
       } else {
-        // Crear (con confirm email activado → SÍ enviamos redirect)
         const passwordToUse = formData.password.trim();
 
         const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -271,7 +266,6 @@ export function GestionNutriologos() {
               '2. Busca y elimina el usuario con este correo\n' +
               '3. Intenta crear de nuevo'
             );
-            console.log('Email duplicado detectado:', nutriologoData.correo);
             return;
           } else if (authError.status === 429) {
             toast.error(
@@ -307,7 +301,6 @@ export function GestionNutriologos() {
           });
 
         if (insertError) {
-          console.warn('Usuario Auth creado pero insert falló. Borra manualmente el user Auth si es necesario:', userId);
           throw insertError;
         }
 
@@ -324,7 +317,6 @@ export function GestionNutriologos() {
       setIsEditDialogOpen(false);
       resetForm();
     } catch (err: any) {
-      console.error('Error guardando nutriólogo:', err);
       const msg = err.message || JSON.stringify(err) || 'Error desconocido al guardar';
       toast.error(`Error al guardar: ${msg}`);
     }
@@ -371,13 +363,11 @@ export function GestionNutriologos() {
       if (deleteProfile) throw deleteProfile;
 
       if (id_auth_user) {
-        console.warn('Usuario Auth no eliminado automáticamente. Borra manualmente en Supabase Auth → Users:', id_auth_user);
       }
 
       toast.success(`Nutriólogo ${nombre} ${apellido} eliminado exitosamente`);
       await fetchNutriologos();
     } catch (err: any) {
-      console.error('Error eliminando nutriólogo:', err);
       toast.error(err.message || 'No se pudo eliminar');
     }
   };
@@ -388,8 +378,6 @@ export function GestionNutriologos() {
 
   return (
     <div className="p-4 md:p-10 bg-[#F8FFF9] min-h-screen space-y-10 font-sans">
-      
-      {/* Header Estilizado */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 px-2">
         <div>
           <div className="inline-flex flex-col items-start">
@@ -491,8 +479,6 @@ export function GestionNutriologos() {
           </DialogContent>
         </Dialog>
       </div>
-
-      {/* Tabla Principal - Ahora con foto de perfil */}
       <Card className="rounded-[2.5rem] border-2 border-[#D1E8D5] overflow-hidden bg-white shadow-sm">
         <CardHeader className="bg-[#F8FFF9] border-b border-[#D1E8D5] p-8">
           <CardTitle className="text-sm font-[900] text-[#1A3026] uppercase tracking-[2px] flex items-center gap-2">
@@ -515,7 +501,11 @@ export function GestionNutriologos() {
               </TableHeader>
               <TableBody>
                 {nutriologos.map((nutriologo) => (
-                  <TableRow key={nutriologo.id_nutriologo} className="border-b border-[#F8FFF9] hover:bg-[#F8FFF9]/50 transition-colors group">
+                  <TableRow 
+                    key={nutriologo.id_nutriologo} 
+                    onClick={() => handleEdit(nutriologo)}
+                    className="border-b border-[#F8FFF9] hover:bg-[#F8FFF9]/50 transition-colors group cursor-pointer"
+                  >
                     <TableCell className="py-6 px-8">
                       <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-[#D1E8D5] flex items-center justify-center bg-[#F8FFF9]">
                         <ImageWithFallback
@@ -553,17 +543,23 @@ export function GestionNutriologos() {
                     </TableCell>
                     <TableCell className="text-right py-6 px-8">
                       <div className="flex justify-end gap-3">
-                        {/* Botón Editar */}
                         <Dialog open={isEditDialogOpen && editingId === nutriologo.id_nutriologo} onOpenChange={(open) => {
                           setIsEditDialogOpen(open);
                           if (!open) { resetForm(); setEditingId(null); }
                         }}>
                           <DialogTrigger asChild>
-                            <Button onClick={() => handleEdit(nutriologo)} variant="ghost" className="h-10 w-10 p-0 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all">
+                            <Button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEdit(nutriologo);
+                              }} 
+                              variant="ghost" 
+                              className="h-10 w-10 p-0 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all"
+                            >
                               <Edit size={16} />
                             </Button>
                           </DialogTrigger>
-                          <DialogContent className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] max-w-2xl max-h-[90vh] overflow-y-auto rounded-[2rem] sm:rounded-[2.5rem] border-2 border-[#D1E8D5] p-4 sm:p-6 md:p-8">
+                          <DialogContent className="w-[calc(100vw-1rem)] sm:w-[calc(100vw-2rem)] max-w-2xl max-h-[90vh] overflow-y-auto rounded-[2rem] sm:rounded-[2.5rem] border-2 border-[#D1E8D5] p-4 sm:p-6 md:p-8" onClick={(e) => e.stopPropagation()}>
                             <DialogHeader>
                               <DialogTitle className="text-2xl font-[900] text-[#1A3026] uppercase tracking-tight">Editar Nutriólogo</DialogTitle>
                             </DialogHeader>
@@ -601,8 +597,6 @@ export function GestionNutriologos() {
                                   required 
                                 />
                               </div>
-
-                              {/* Botón de reset contraseña en edición */}
                               <div className="md:col-span-2 flex justify-end">
                                 <Button 
                                   type="button" 
@@ -623,11 +617,13 @@ export function GestionNutriologos() {
                             </form>
                           </DialogContent>
                         </Dialog>
-
-                        {/* Botón Eliminar */}
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button variant="ghost" className="h-10 w-10 p-0 bg-red-50 text-red-600 rounded-xl hover:bg-red-600 hover:text-white transition-all">
+                            <Button 
+                              onClick={(e) => e.stopPropagation()}
+                              variant="ghost" 
+                              className="h-10 w-10 p-0 bg-red-50 text-red-600 rounded-xl hover:bg-red-600 hover:text-white transition-all"
+                            >
                               <Trash2 size={16} />
                             </Button>
                           </AlertDialogTrigger>
